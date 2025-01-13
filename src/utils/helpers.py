@@ -1,4 +1,4 @@
-import os
+'''import os
 import glob
 import pandas as pd
 from typing import List, Any, Dict
@@ -144,4 +144,118 @@ def salvar_metricas(metricas: Dict[str, float], caminho: str) -> None:
         logger.info(f"Métricas salvas em: {caminho}")
     except Exception as e:
         logger.error(f"Erro ao salvar métricas: {str(e)}")
-        raise
+        raise'''
+import os
+import glob
+from typing import List
+import logging
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+def carregar_arquivos_dados(padrao: str) -> List[str]:
+    """
+    Carrega arquivos que correspondem ao padrão especificado.
+    
+    Args:
+        padrao: Padrão glob para busca de arquivos
+        
+    Returns:
+        Lista de caminhos dos arquivos encontrados
+    """
+    # Converter para Path para manipulação mais segura
+    padrao_path = Path(padrao)
+    
+    # Resolver caminho completo
+    caminho_base = padrao_path.parent
+    padrao_arquivo = padrao_path.name
+    
+    # Verificar se o diretório existe
+    if not caminho_base.exists():
+        logger.error(f"Diretório não encontrado: {caminho_base}")
+        return []
+        
+    # Buscar arquivos
+    arquivos = list(caminho_base.glob(padrao_arquivo))
+    
+    if not arquivos:
+        logger.warning(f"Nenhum arquivo encontrado com o padrão: {padrao}")
+    else:
+        logger.info(f"Encontrados {len(arquivos)} arquivos")
+        for arquivo in arquivos:
+            logger.debug(f"Arquivo encontrado: {arquivo}")
+            
+            # Verificar tamanho do arquivo
+            tamanho = arquivo.stat().st_size / (1024 * 1024)  # MB
+            logger.debug(f"Tamanho: {tamanho:.2f} MB")
+    
+    return [str(arquivo.absolute()) for arquivo in arquivos]
+
+def criar_diretorio_se_nao_existe(caminho: str) -> None:
+    """
+    Cria um diretório se ele não existir.
+    
+    Args:
+        caminho: Caminho do diretório a ser criado
+    """
+    diretorio = Path(caminho)
+    if not diretorio.exists():
+        logger.info(f"Criando diretório: {caminho}")
+        diretorio.mkdir(parents=True, exist_ok=True)
+    else:
+        logger.debug(f"Diretório já existe: {caminho}")
+
+def verificar_espaco_disco(caminho: str, espaco_minimo_gb: float = 10.0) -> bool:
+    """
+    Verifica se há espaço em disco suficiente.
+    
+    Args:
+        caminho: Caminho para verificar
+        espaco_minimo_gb: Espaço mínimo necessário em GB
+        
+    Returns:
+        bool: True se há espaço suficiente
+    """
+    try:
+        total, usado, livre = shutil.disk_usage(caminho)
+        livre_gb = livre / (1024 * 1024 * 1024)  # Converter para GB
+        
+        logger.info(f"Espaço livre em disco: {livre_gb:.2f} GB")
+        
+        if livre_gb < espaco_minimo_gb:
+            logger.warning(
+                f"Espaço em disco insuficiente. "
+                f"Disponível: {livre_gb:.2f} GB, "
+                f"Mínimo necessário: {espaco_minimo_gb} GB"
+            )
+            return False
+            
+        return True
+        
+    except Exception as e:
+        logger.error(f"Erro ao verificar espaço em disco: {str(e)}")
+        return False
+
+def limpar_arquivos_temporarios(diretorio: str, padrao: str = "*") -> None:
+    """
+    Remove arquivos temporários.
+    
+    Args:
+        diretorio: Diretório onde procurar
+        padrao: Padrão de arquivos a remover
+    """
+    try:
+        dir_path = Path(diretorio)
+        if not dir_path.exists():
+            return
+            
+        arquivos = list(dir_path.glob(padrao))
+        for arquivo in arquivos:
+            if arquivo.is_file():
+                arquivo.unlink()
+                logger.debug(f"Arquivo removido: {arquivo}")
+                
+        logger.info(f"{len(arquivos)} arquivos temporários removidos")
+        
+    except Exception as e:
+        logger.error(f"Erro ao limpar arquivos temporários: {str(e)}")

@@ -1,4 +1,4 @@
-from pyspark.sql import SparkSession
+from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (col, explode, from_json, to_timestamp, 
                                  concat, lit, udf, count, min, max, coalesce, size, avg, length, when)
 from pyspark.sql.types import (ArrayType, StringType, TimestampType, 
@@ -10,6 +10,16 @@ import pandas as pd
 from src.config.spark_config import criar_spark_session, configurar_log_nivel
 
 logger = logging.getLogger(__name__)
+
+def _processar_lista(valor: str) -> list:
+    """Processa string JSON para lista."""
+    try:
+        if valor:
+            return json.loads(valor)
+        return []
+    except Exception as e:
+        logger.error(f"Erro ao processar lista: {str(e)}")
+        return []
 
 class PreProcessadorDadosSpark:
     def __init__(self, memoria_executor="4g", memoria_driver="4g"):
@@ -48,16 +58,6 @@ class PreProcessadorDadosSpark:
             StructField("Caption", StringType(), True)
         ])
 
-    def _processar_lista(self, valor: str) -> list:
-        """Processa string JSON para lista."""
-        try:
-            if valor:
-                return json.loads(valor)
-            return []
-        except Exception as e:
-            logger.error(f"Erro ao processar lista: {str(e)}")
-            return []
-
     def processar_dados_treino(self, arquivos_treino: list, 
                              arquivos_itens: list) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
@@ -74,7 +74,7 @@ class PreProcessadorDadosSpark:
         
         try:
             # Registrar UDF para processamento de listas
-            processar_lista_udf = udf(self._processar_lista, ArrayType(StringType()))
+            processar_lista_udf = udf(_processar_lista, ArrayType(StringType()))
             
             # Carregar e processar dados de treino
             logger.info("Carregando dados de treino")

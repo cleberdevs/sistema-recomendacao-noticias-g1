@@ -147,9 +147,12 @@ def salvar_metricas(metricas: Dict[str, float], caminho: str) -> None:
         raise'''
 import os
 import glob
-from typing import List
+import shutil
 import logging
 from pathlib import Path
+from typing import List, Any, Dict
+from functools import wraps
+from flask import jsonify, request
 
 logger = logging.getLogger(__name__)
 
@@ -259,3 +262,122 @@ def limpar_arquivos_temporarios(diretorio: str, padrao: str = "*") -> None:
         
     except Exception as e:
         logger.error(f"Erro ao limpar arquivos temporários: {str(e)}")
+
+def tratar_excecoes(f):
+    """
+    Decorator para tratamento uniforme de exceções na API.
+    
+    Args:
+        f: Função a ser decorada
+        
+    Returns:
+        Função decorada
+    """
+    @wraps(f)
+    def funcao_decorada(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except Exception as e:
+            logger.error(f"Erro na execução: {str(e)}")
+            return jsonify({
+                "erro": "Erro interno",
+                "tipo": type(e).__name__,
+                "detalhes": str(e)
+            }), 500
+    return funcao_decorada
+
+def validar_entrada_json(campos_obrigatorios: List[str]):
+    """
+    Decorator para validar entrada JSON da API.
+    
+    Args:
+        campos_obrigatorios: Lista de campos que devem estar presentes no JSON
+    """
+    def decorador(f):
+        @wraps(f)
+        def funcao_decorada(*args, **kwargs):
+            try:
+                dados = request.get_json()
+                if not dados:
+                    erro_msg = "Dados JSON não fornecidos"
+                    logger.error(erro_msg)
+                    return jsonify({
+                        "erro": erro_msg,
+                        "detalhes": "O corpo da requisição deve ser JSON válido"
+                    }), 400
+                
+                campos_faltantes = [
+                    campo for campo in campos_obrigatorios 
+                    if campo not in dados
+                ]
+                
+                if campos_faltantes:
+                    erro_msg = f"Campos obrigatórios faltando: {campos_faltantes}"
+                    logger.error(erro_msg)
+                    return jsonify({
+                        "erro": "Campos obrigatórios faltando",
+                        "campos_faltantes": campos_faltantes
+                    }), 400
+                
+                # Validar tipos de dados
+                if 'id_usuario' in dados and not isinstance(dados['id_usuario'], str):
+                    return jsonify({
+                        "erro": "Tipo inválido",
+                        "detalhes": "id_usuario deve ser uma string"
+                    }), 400
+                
+                if 'n_recomendacoes' in dados and not isinstance(dados['n_recomendacoes'], int):
+                    return jsonify({
+                        "erro": "Tipo inválido",
+                        "detalhes": "n_recomendacoes deve ser um inteiro"
+                    }), 400
+                
+                return f(*args, **kwargs)
+                
+            except Exception as e:
+                logger.error(f"Erro na validação de entrada: {str(e)}")
+                return jsonify({
+                    "erro": "Erro na validação de entrada",
+                    "detalhes": str(e)
+                }), 400
+                
+        return funcao_decorada
+    return decorador
+
+def validar_tipo_dados(valor: Any, tipo_esperado: type, nome_campo: str) -> Any:
+    """
+    Valida o tipo de um valor.
+    
+    Args:
+        valor: Valor a ser validado
+        tipo_esperado: Tipo esperado
+        nome_campo: Nome do campo para mensagem de erro
+        
+    Returns:
+        O próprio valor se for válido
+        
+    Raises:
+        ValueError: Se o tipo for inválido
+    """
+    if not isinstance(valor, tipo_esperado):
+        erro_msg = f"Campo '{nome_campo}' deve ser do tipo {tipo_esperado.__name__}"
+        logger.error(erro_msg)
+        raise ValueError(erro_msg)
+    return valor
+
+def salvar_metricas(metricas: Dict[str, float], caminho: str) -> None:
+    """
+    Salva métricas em um arquivo JSON.
+    
+    Args:
+        metricas: Dicionário com as métricas
+        caminho: Caminho do arquivo
+    """
+    try:
+        import json
+        with open(caminho, 'w') as f:
+            json.dump(metricas, f, indent=4)
+        logger.info(f"Métricas salvas em: {caminho}")
+    except Exception as e:
+        logger.error(f"Erro ao salvar métricas: {str(e)}")
+        raise

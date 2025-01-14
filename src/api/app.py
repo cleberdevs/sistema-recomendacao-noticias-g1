@@ -6,6 +6,8 @@ from src.config.logging_config import get_logger, configurar_logging
 import mlflow
 from datetime import datetime
 import os
+from src.utils.helpers import tratar_excecoes, validar_entrada_json
+from src.config.logging_config import get_logger, configurar_logging
 
 # Configurar logging
 configurar_logging()
@@ -110,3 +112,4 @@ def erro_interno(erro):
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8000))
     app.run(host='0.0.0.0', port=port)
+

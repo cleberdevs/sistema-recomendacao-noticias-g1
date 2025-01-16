@@ -952,7 +952,7 @@ def configurar_spark(app_name="RecomendadorNoticias", master="local[*]", memoria
         logger.error(f"Erro ao configurar Spark: {str(e)}")
         raise
 
-def treinar_modelo():
+def treinar_modelo(spark: SparkSession):
     """
     Função principal para treinamento do modelo.
     Gerencia todo o processo de treinamento, incluindo:
@@ -964,7 +964,6 @@ def treinar_modelo():
     """
     logger.info("Iniciando processo de treinamento")
     mlflow_config = None
-    spark = None
     
     try:
         # Configurar MLflow
@@ -982,14 +981,6 @@ def treinar_modelo():
             logger.info("Criando diretórios necessários")
             criar_diretorio_se_nao_existe('modelos/modelos_salvos')
             criar_diretorio_se_nao_existe('dados/processados')
-            
-            # Inicializar Spark
-            spark = configurar_spark(
-                app_name="RecomendadorNoticias",
-                master="local[*]",  # Modo local (ou use "spark://<endereço>" para cluster)
-                memoria_executor="8g",
-                memoria_driver="8g"
-            )
             
             # Verificar se a sessão do Spark está ativa
             if spark is None or spark._sc._jsc is None:
@@ -1061,19 +1052,30 @@ def treinar_modelo():
         
     finally:
         # Limpar recursos
+        if mlflow_config:
+            mlflow_config.finalizar_run()
+
+if __name__ == "__main__":
+    spark = None
+    try:
+        # Inicializar Spark
+        spark = configurar_spark(
+            app_name="RecomendadorNoticias",
+            master="local[*]",  # Modo local (ou use "spark://<endereço>" para cluster)
+            memoria_executor="8g",
+            memoria_driver="8g"
+        )
+        
+        # Treinar modelo
+        modelo = treinar_modelo(spark)
+    except Exception as e:
+        logger.error(f"Erro fatal durante execução: {str(e)}")
+        raise
+    finally:
+        # Encerrar Spark
         if spark:
             try:
                 spark.stop()
                 logger.info("Sessão do Spark encerrada com sucesso.")
             except Exception as e:
                 logger.error(f"Erro ao encerrar a sessão do Spark: {str(e)}")
-            
-        if mlflow_config:
-            mlflow_config.finalizar_run()
-
-if __name__ == "__main__":
-    try:
-        modelo = treinar_modelo()
-    except Exception as e:
-        logger.error(f"Erro fatal durante execução: {str(e)}")
-        raise

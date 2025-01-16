@@ -28,29 +28,6 @@ else
     log "PySpark já está instalado."
 fi
 
-# Criar diretórios necessários
-log "Criando diretórios necessários..."
-mkdir -p mlflow-artifacts
-mkdir -p logs
-mkdir -p spark-logs
-
-# Iniciar servidor MLflow em background
-log "Iniciando servidor MLflow..."
-mlflow server \
-    --host 0.0.0.0 \
-    --port 5000 \
-    --backend-store-uri sqlite:///mlflow.db \
-    --default-artifact-root ./mlflow-artifacts \
-    > logs/mlflow.log 2>&1 &
-
-# Aguardar MLflow iniciar
-sleep 5
-if ! netstat -tuln | grep -q ':5000 '; then
-    error_log "Falha ao iniciar MLflow"
-    exit 1
-fi
-log "MLflow iniciado com sucesso"
-
 # Configurar variáveis de ambiente para o Flask
 export PYTHONPATH=$(pwd)/src  # Adiciona o diretório src ao PYTHONPATH
 export FLASK_APP=src.api.app  # Define o módulo Flask

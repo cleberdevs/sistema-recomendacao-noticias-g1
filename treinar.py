@@ -909,6 +909,7 @@ import logging
 import signal
 import sys
 import time
+import mlflow
 from pyspark.sql import SparkSession
 from src.modelo.recomendador import RecomendadorHibrido
 from src.modelo.preprocessamento_spark import PreProcessadorDadosSpark
@@ -1049,7 +1050,7 @@ def encerrar_spark_seguro(spark):
         try:
             # Garantir que todos os jobs sejam finalizados
             spark.sparkContext.cancelAllJobs()
-            time.sleep(2)  # Esperar jobs serem cancelados
+            time.sleep(2)
             
             # Limpar cache e recursos
             spark.catalog.clearCache()
@@ -1058,7 +1059,7 @@ def encerrar_spark_seguro(spark):
             if not spark._jsc.sc().isStopped():
                 spark.stop()
                 SparkSession._instantiatedSession = None
-                time.sleep(1)  # Esperar limpeza
+                time.sleep(1)
             
             # Limpar checkpoints
             limpar_diretorio_checkpoints()
@@ -1066,13 +1067,6 @@ def encerrar_spark_seguro(spark):
             logger.info("Sessão Spark encerrada com sucesso")
         except Exception as e:
             logger.error(f"Erro ao encerrar Spark: {str(e)}")
-            # Tentar encerramento forçado
-            try:
-                if SparkSession._instantiatedSession:
-                    SparkSession._instantiatedSession = None
-                os._exit(0)
-            except:
-                pass
 
 def treinar_modelo(spark):
     """
@@ -1097,6 +1091,10 @@ def treinar_modelo(spark):
         # Configurar MLflow
         mlflow_config = MLflowConfig()
         mlflow_config.setup_mlflow()
+        
+        # Finalizar qualquer run ativo do MLflow
+        if mlflow.active_run():
+            mlflow.end_run()
         
         with mlflow_config.iniciar_run(
             run_name="treinamento_completo",
@@ -1128,50 +1126,29 @@ def treinar_modelo(spark):
                 arquivos_itens
             )
             
-            # Verificar se os DataFrames foram criados corretamente
-            if not dados_treino or not dados_itens:
-                raise ValueError("Erro ao processar dados")
+            # Verificar dados processados
+            if dados_treino is None or dados_itens is None:
+                raise ValueError("Erro no processamento dos dados")
             
-            # Validar e analisar dados
+            # Validar dados
             logger.info("Validando dados")
             if not preprocessador.validar_dados(dados_treino, dados_itens):
                 logger.warning("Dados contêm valores nulos ou inconsistências")
             
+            # Mostrar informações dos dados
             preprocessador.mostrar_info_dados(dados_treino, dados_itens)
             
-            # Registrar métricas dos dados
-            try:
-                metricas_dados = {
-                    "num_usuarios": dados_treino.select("idUsuario").distinct().count(),
-                    "num_itens": dados_itens.count(),
-                    "tamanho_dados_treino": dados_treino.count()
-                }
-                mlflow_config.log_parametros(metricas_dados)
-            except Exception as e:
-                logger.error(f"Erro ao registrar métricas: {str(e)}")
-            
-            # Treinar modelo
+            # Criar e treinar modelo
             logger.info("Iniciando treinamento do modelo")
-            modelo = RecomendadorHibrido()
-            historia_treino = modelo.treinar(dados_treino, dados_itens)
+            modelo = RecomendadorHibrido(mlflow_config=mlflow_config)
             
-            # Registrar métricas de treinamento
-            try:
-                metricas_finais = {
-                    "acuracia_final": historia_treino.history['accuracy'][-1],
-                    "loss_final": historia_treino.history['loss'][-1],
-                    "val_accuracy_final": historia_treino.history.get('val_accuracy', [0])[-1],
-                    "val_loss_final": historia_treino.history.get('val_loss', [0])[-1]
-                }
-                mlflow_config.log_metricas(metricas_finais)
-            except Exception as e:
-                logger.error(f"Erro ao registrar métricas finais: {str(e)}")
+            # Treinar modelo com novo run do MLflow
+            historia_treino = modelo.treinar(dados_treino, dados_itens)
             
             # Salvar modelo
             logger.info("Salvando modelo treinado")
             caminho_modelo = 'modelos/modelos_salvos/recomendador_hibrido'
             modelo.salvar_modelo(caminho_modelo)
-            mlflow_config.log_artefato(caminho_modelo)
             
             logger.info("Treinamento concluído com sucesso")
             return modelo
@@ -1181,7 +1158,6 @@ def treinar_modelo(spark):
         if mlflow_config:
             mlflow_config.finalizar_run(status="FAILED")
         raise
-        
     finally:
         # Limpar recursos
         if mlflow_config:
@@ -1225,5 +1201,6 @@ if __name__ == "__main__":
         logger.error(f"Erro fatal durante execução: {str(e)}")
         raise
     finally:
+        # Limpeza final
         if spark:
             encerrar_spark_seguro(spark)

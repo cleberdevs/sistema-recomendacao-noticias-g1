@@ -6,6 +6,7 @@ from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Embedding, Flatten, Concatenate, Dropout
 import pickle
 from datetime import datetime
+import mlflow
 from src.config.mlflow_config import MLflowConfig
 import logging
 
@@ -13,7 +14,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class RecomendadorHibrido:
-    def __init__(self, dim_embedding=32, dim_features_texto=100):
+    def __init__(self, dim_embedding=32, dim_features_texto=100, mlflow_config=None):
         self.dim_embedding = dim_embedding
         self.dim_features_texto = dim_features_texto
         self.modelo = None
@@ -24,7 +25,7 @@ class RecomendadorHibrido:
         self.itens_usuario = {}
         self.features_item = {}
         self.matriz_similaridade = None
-        self.mlflow_config = MLflowConfig()
+        self.mlflow_config = mlflow_config if mlflow_config else MLflowConfig()
         logger.info("Inicializando RecomendadorHibrido")
 
     def _construir_modelo_neural(self, n_usuarios, n_itens):
@@ -55,7 +56,7 @@ class RecomendadorHibrido:
             # Concatenate
             concat = Concatenate()([usuario_flat, item_flat, entrada_conteudo])
 
-            # Dense layers
+            # Dense layers with better regularization
             denso1 = Dense(128, activation='relu', name='dense_1')(concat)
             dropout1 = Dropout(0.3)(denso1)
             denso2 = Dense(64, activation='relu', name='dense_2')(dropout1)
@@ -68,11 +69,11 @@ class RecomendadorHibrido:
                 outputs=saida
             )
             
-            # Compile
+            # Compile with better metrics
             modelo.compile(
                 optimizer='adam',
                 loss='binary_crossentropy',
-                metrics=['accuracy']
+                metrics=['accuracy', 'Precision', 'Recall']
             )
             
             logger.info("Modelo neural construído com sucesso")
@@ -97,15 +98,13 @@ class RecomendadorHibrido:
 
     def treinar(self, dados_treino, dados_itens):
         logger.info("Iniciando treinamento do modelo")
-        self.mlflow_config.setup_mlflow()
-        
-        with self.mlflow_config.iniciar_run(run_name="treinamento_modelo"):
-            try:
-                # Processar features de conteúdo
-                features_conteudo = self._criar_features_conteudo(dados_itens)
-                self.matriz_similaridade = self._calcular_matriz_similaridade(features_conteudo)
+        try:
+            # Processar features de conteúdo
+            features_conteudo = self._criar_features_conteudo(dados_itens)
+            self.matriz_similaridade = self._calcular_matriz_similaridade(features_conteudo)
 
-                # Registrar parâmetros
+            # Registrar parâmetros se MLflow estiver ativo
+            if mlflow.active_run():
                 parametros = {
                     "dim_embedding": self.dim_embedding,
                     "dim_features_texto": self.dim_features_texto,
@@ -114,54 +113,79 @@ class RecomendadorHibrido:
                 }
                 self.mlflow_config.log_parametros(parametros)
 
-                # Criar mapeamento usuário-item
-                for _, linha in dados_treino.iterrows():
-                    self.itens_usuario[linha['idUsuario']] = set(linha['historico'])
+            # Criar mapeamento usuário-item
+            for _, linha in dados_treino.iterrows():
+                self.itens_usuario[linha['idUsuario']] = set(linha['historico'])
 
-                # Armazenar features dos itens
-                for idx, linha in dados_itens.iterrows():
-                    self.features_item[idx] = {
-                        'vetor_conteudo': features_conteudo[idx],
-                        'timestamp': linha['DataPublicacao'].timestamp()
-                    }
+            # Armazenar features dos itens
+            for idx, linha in dados_itens.iterrows():
+                self.features_item[idx] = {
+                    'vetor_conteudo': features_conteudo[idx],
+                    'timestamp': linha['DataPublicacao'].timestamp()
+                }
 
-                # Construir e treinar modelo neural
-                n_usuarios = len(self.itens_usuario)
-                n_itens = len(self.features_item)
-                
-                self.modelo = self._construir_modelo_neural(n_usuarios, n_itens)
-                
-                # Preparar dados de treino
-                X_usuario, X_item, X_conteudo, y = self._preparar_dados_treino(
-                    dados_treino,
-                    features_conteudo
-                )
+            # Construir e treinar modelo neural
+            n_usuarios = len(self.itens_usuario)
+            n_itens = len(self.features_item)
+            
+            self.modelo = self._construir_modelo_neural(n_usuarios, n_itens)
+            
+            # Preparar dados de treino
+            X_usuario, X_item, X_conteudo, y = self._preparar_dados_treino(
+                dados_treino,
+                features_conteudo
+            )
 
-                # Treinar modelo
-                historia = self.modelo.fit(
-                    [X_usuario, X_item, X_conteudo],
-                    y,
-                    epochs=5,
-                    batch_size=64,
-                    validation_split=0.2,
-                    verbose=1
-                )
+            # Callbacks para early stopping e redução de learning rate
+            callbacks = self._configurar_callbacks()
 
-                # Log métricas
+            # Treinar modelo
+            historia = self.modelo.fit(
+                [X_usuario, X_item, X_conteudo],
+                y,
+                epochs=5,
+                batch_size=64,
+                validation_split=0.2,
+                callbacks=callbacks,
+                verbose=1
+            )
+
+            # Log métricas se MLflow estiver ativo
+            if mlflow.active_run():
                 metricas = {
                     "loss_final": historia.history['loss'][-1],
                     "accuracy_final": historia.history['accuracy'][-1],
                     "val_loss_final": historia.history['val_loss'][-1],
-                    "val_accuracy_final": historia.history['val_accuracy'][-1]
+                    "val_accuracy_final": historia.history['val_accuracy'][-1],
+                    "precision_final": historia.history['precision'][-1],
+                    "recall_final": historia.history['recall'][-1]
                 }
                 self.mlflow_config.log_metricas(metricas)
-                
-                logger.info("Treinamento concluído com sucesso")
-                return historia
+            
+            logger.info("Treinamento concluído com sucesso")
+            return historia
 
-            except Exception as e:
-                logger.error(f"Erro durante o treinamento: {str(e)}")
-                raise
+        except Exception as e:
+            logger.error(f"Erro durante o treinamento: {str(e)}")
+            raise
+
+    def _configurar_callbacks(self):
+        """Configura callbacks para o treinamento"""
+        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+        
+        return [
+            EarlyStopping(
+                monitor='val_loss',
+                patience=3,
+                restore_best_weights=True
+            ),
+            ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.2,
+                patience=2,
+                min_lr=0.00001
+            )
+        ]
 
     def _preparar_dados_treino(self, dados_treino, features_conteudo):
         """Prepara os dados para treinamento do modelo neural"""
@@ -178,7 +202,7 @@ class RecomendadorHibrido:
                 X_conteudo.append(features_conteudo[item_id])
                 y.append(1)
             
-            # Amostras negativas
+            # Amostras negativas balanceadas
             negativos = self._gerar_amostras_negativas(historico, len(features_conteudo))
             for item_id in negativos:
                 X_usuario.append(usuario_id)
@@ -215,15 +239,25 @@ class RecomendadorHibrido:
             conteudo_input = np.array([self.features_item[i]['vetor_conteudo'] 
                                      for i in todos_itens])
 
-            # Gerar previsões
-            previsoes = self.modelo.predict(
-                [usuario_input, item_input, conteudo_input],
-                verbose=0
-            )
+            # Gerar previsões em lotes para melhor performance
+            batch_size = 1024
+            previsoes = []
+            
+            for i in range(0, len(todos_itens), batch_size):
+                batch_end = min(i + batch_size, len(todos_itens))
+                batch_previsoes = self.modelo.predict(
+                    [
+                        usuario_input[i:batch_end],
+                        item_input[i:batch_end],
+                        conteudo_input[i:batch_end]
+                    ],
+                    verbose=0
+                )
+                previsoes.extend(batch_previsoes.flatten())
 
             # Filtrar itens já vistos
             itens_vistos = self.itens_usuario[id_usuario]
-            scores = [(item, score) for item, score in zip(todos_itens, previsoes.flatten())
+            scores = [(item, score) for item, score in zip(todos_itens, previsoes)
                      if item not in itens_vistos]
 
             # Ordenar e retornar top N
@@ -257,13 +291,16 @@ class RecomendadorHibrido:
                 'tfidf': self.tfidf,
                 'itens_usuario': self.itens_usuario,
                 'features_item': self.features_item,
-                'matriz_similaridade': self.matriz_similaridade
+                'matriz_similaridade': self.matriz_similaridade,
+                'dim_embedding': self.dim_embedding,
+                'dim_features_texto': self.dim_features_texto
             }
             
             with open(caminho, 'wb') as f:
                 pickle.dump(dados_modelo, f)
             
-            self.mlflow_config.log_artefato(caminho)
+            if mlflow.active_run():
+                self.mlflow_config.log_artefato(caminho)
             logger.info("Modelo salvo com sucesso")
             
         except Exception as e:
@@ -277,7 +314,10 @@ class RecomendadorHibrido:
             with open(caminho, 'rb') as f:
                 dados_modelo = pickle.load(f)
                 
-            instancia = cls()
+            instancia = cls(
+                dim_embedding=dados_modelo['dim_embedding'],
+                dim_features_texto=dados_modelo['dim_features_texto']
+            )
             instancia.modelo = dados_modelo['modelo']
             instancia.tfidf = dados_modelo['tfidf']
             instancia.itens_usuario = dados_modelo['itens_usuario']

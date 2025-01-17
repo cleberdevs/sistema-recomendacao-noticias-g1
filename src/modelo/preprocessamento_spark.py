@@ -612,41 +612,27 @@ class PreProcessadorDadosSpark:
 
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql.functions import (
-    col, explode, from_json, to_timestamp, concat, lit, udf, count, min, max, coalesce, size, avg, length, when
+    col, explode, from_json, to_timestamp, concat, lit, udf,
+    count, min, max, coalesce, size, avg, length, when
 )
 from pyspark.sql.types import ArrayType, StringType, TimestampType, StructType, StructField
 import logging
-from typing import Tuple
+from typing import Tuple, Optional, List
 import json
-import pandas as pd
-from src.config.spark_config import criar_spark_session, configurar_log_nivel
 
 logger = logging.getLogger(__name__)
-
-def _processar_lista(valor: str) -> list:
-    """Processa string JSON para lista."""
-    try:
-        if valor:
-            return json.loads(valor)
-        return []
-    except Exception as e:
-        logger.error(f"Erro ao processar lista: {str(e)}")
-        return []
 
 class PreProcessadorDadosSpark:
     def __init__(self, spark: SparkSession):
         """
-        Inicializa o preprocessador com Spark.
+        Inicializa o preprocessador com uma sessão Spark.
         
         Args:
-            spark: Sessão do Spark.
+            spark: Sessão Spark ativa
         """
         self.spark = spark
-        configurar_log_nivel(self.spark)
         
-        logger.info("Sessão Spark inicializada")
-        
-        # Definir schemas para melhor performance
+        # Definir schemas otimizados
         self.schema_treino = StructType([
             StructField("history", StringType(), True),
             StructField("timestampHistory", StringType(), True),
@@ -665,65 +651,102 @@ class PreProcessadorDadosSpark:
             StructField("Modified", TimestampType(), True),
             StructField("Caption", StringType(), True)
         ])
-
-    def processar_dados_treino(self, arquivos_treino: list, arquivos_itens: list) -> Tuple[DataFrame, DataFrame]:
+        
+        logger.info("PreProcessador inicializado com sucesso")
+    
+    def _verificar_spark_ativo(self):
+        """Verifica se a sessão Spark está ativa."""
+        if not self.spark or self.spark._jsc.sc().isStopped():
+            raise RuntimeError("Sessão Spark não está ativa")
+    
+    def _processar_lista_json(self, valor: str) -> list:
         """
-        Processa os dados usando Spark.
+        Processa string JSON para lista.
         
         Args:
-            arquivos_treino: Lista de caminhos dos arquivos de treino.
-            arquivos_itens: Lista de caminhos dos arquivos de itens.
+            valor: String JSON a ser processada
             
         Returns:
-            Tuple contendo DataFrames Spark de treino e itens processados.
+            Lista processada
         """
-        logger.info("Iniciando processamento dos dados com Spark")
+        try:
+            if valor and isinstance(valor, str):
+                return json.loads(valor)
+            return []
+        except Exception as e:
+            logger.error(f"Erro ao processar JSON: {str(e)}")
+            return []
+
+    def processar_dados_treino(
+        self, 
+        arquivos_treino: List[str], 
+        arquivos_itens: List[str]
+    ) -> Tuple[DataFrame, DataFrame]:
+        """
+        Processa os dados de treino e itens.
+        
+        Args:
+            arquivos_treino: Lista de caminhos dos arquivos de treino
+            arquivos_itens: Lista de caminhos dos arquivos de itens
+            
+        Returns:
+            Tuple contendo DataFrames processados de treino e itens
+        """
+        logger.info("Iniciando processamento dos dados")
+        self._verificar_spark_ativo()
+        
+        df_treino = None
+        df_itens = None
         
         try:
-            # Carregar e processar dados de treino
+            # Processar dados de treino
             logger.info("Carregando dados de treino")
             df_treino = self.spark.read.csv(
                 arquivos_treino, 
                 header=True, 
                 schema=self.schema_treino
-            ).cache()  # Cache para reuso
+            ).checkpoint()
             
-            logger.info(f"Registros de treino carregados: {df_treino.count()}")
+            num_registros_treino = df_treino.count()
+            logger.info(f"Registros de treino carregados: {num_registros_treino}")
             
-            # Processar colunas de listas usando from_json (nativo do Spark)
+            if num_registros_treino == 0:
+                raise ValueError("Nenhum dado de treino encontrado")
+            
+            # Processar colunas JSON
             df_treino = df_treino.withColumn(
                 "historico", 
                 from_json(col("history"), ArrayType(StringType()))
             ).withColumn(
                 "historicoTimestamp", 
                 from_json(col("timestampHistory"), ArrayType(StringType()))
-            )
-            
-            # Renomear e selecionar colunas
-            df_treino = df_treino.select(
+            ).select(
                 col("historico"),
                 col("historicoTimestamp"),
                 col("userId").alias("idUsuario")
-            )
+            ).persist()
             
-            # Carregar e processar dados dos itens
+            # Processar dados dos itens
             logger.info("Carregando dados dos itens")
             df_itens = self.spark.read.csv(
                 arquivos_itens, 
                 header=True, 
                 schema=self.schema_itens
-            ).cache()
+            ).checkpoint()
             
-            logger.info(f"Registros de itens carregados: {df_itens.count()}")
+            num_registros_itens = df_itens.count()
+            logger.info(f"Registros de itens carregados: {num_registros_itens}")
             
-            # Processar itens
+            if num_registros_itens == 0:
+                raise ValueError("Nenhum dado de item encontrado")
+            
+            # Processar colunas dos itens
             df_itens = df_itens.withColumnRenamed("Page", "Pagina") \
                               .withColumnRenamed("Title", "Titulo") \
                               .withColumnRenamed("Body", "Corpo") \
                               .withColumnRenamed("Issued", "DataPublicacao")
             
-            # Processar features de texto
-            logger.info("Processando features de texto")
+            # Criar coluna de texto combinado
             df_itens = df_itens.withColumn(
                 "conteudo_texto",
                 concat(
@@ -733,35 +756,37 @@ class PreProcessadorDadosSpark:
                     lit(" "),
                     coalesce(col("Caption"), lit(""))
                 )
-            )
+            ).persist()
             
-            logger.info("Processamento com Spark concluído")
             return df_treino, df_itens
             
         except Exception as e:
-            logger.error(f"Erro no processamento Spark: {str(e)}")
+            logger.error(f"Erro no processamento: {str(e)}")
+            # Limpar recursos em caso de erro
+            for df in [df_treino, df_itens]:
+                if df and df.is_cached:
+                    try:
+                        df.unpersist()
+                    except Exception as cleanup_error:
+                        logger.error(f"Erro ao limpar DataFrame: {str(cleanup_error)}")
             raise
-        finally:
-            # Liberar cache em caso de erro
-            if 'df_treino' in locals() and df_treino.is_cached:
-                df_treino.unpersist()
-            if 'df_itens' in locals() and df_itens.is_cached:
-                df_itens.unpersist()
 
     def validar_dados(self, df_treino: DataFrame, df_itens: DataFrame) -> bool:
         """
-        Validação dos dados processados usando Spark para eficiência.
+        Valida a qualidade dos dados processados.
         
         Args:
-            df_treino: DataFrame Spark com dados de treino.
-            df_itens: DataFrame Spark com dados de itens.
+            df_treino: DataFrame com dados de treino
+            df_itens: DataFrame com dados dos itens
             
         Returns:
-            bool: True se os dados são válidos, False caso contrário.
+            bool indicando se os dados são válidos
         """
         logger.info("Validando dados processados")
+        self._verificar_spark_ativo()
+        
         try:
-            # Cache para múltiplas operações
+            # Cache temporário para validação
             df_treino.cache()
             df_itens.cache()
             
@@ -780,15 +805,15 @@ class PreProcessadorDadosSpark:
             tem_nulos = False
             for coluna, nulos in nulos_treino.asDict().items():
                 if nulos > 0:
-                    logger.warning(f"{coluna}: {nulos} nulos")
+                    logger.warning(f"Coluna {coluna}: {nulos} valores nulos")
                     tem_nulos = True
                     
             for coluna, nulos in nulos_itens.asDict().items():
                 if nulos > 0:
-                    logger.warning(f"{coluna}: {nulos} nulos")
+                    logger.warning(f"Coluna {coluna}: {nulos} valores nulos")
                     tem_nulos = True
             
-            # Verificar consistência entre histórico e itens
+            # Verificar consistência
             logger.info("Verificando consistência dos dados")
             historico_items = df_treino.select(
                 explode("historico").alias("item")
@@ -803,19 +828,9 @@ class PreProcessadorDadosSpark:
             n_faltantes = itens_faltantes.count()
             if n_faltantes > 0:
                 logger.warning(
-                    f"Existem {n_faltantes} itens no histórico que não existem nos dados de itens"
+                    f"Existem {n_faltantes} itens no histórico não encontrados nos dados de itens"
                 )
-                
-                # Mostrar alguns exemplos
-                logger.warning("Exemplos de itens faltantes:")
                 itens_faltantes.show(5, truncate=False)
-            
-            # Verificar timestamps
-            logger.info("Verificando timestamps")
-            df_itens.select(
-                min("DataPublicacao").alias("primeira_publicacao"),
-                max("DataPublicacao").alias("ultima_publicacao")
-            ).show()
             
             return not tem_nulos
             
@@ -823,36 +838,36 @@ class PreProcessadorDadosSpark:
             logger.error(f"Erro na validação: {str(e)}")
             return False
         finally:
-            # Liberar cache
-            if 'df_treino' in locals() and df_treino.is_cached:
-                df_treino.unpersist()
-            if 'df_itens' in locals() and df_itens.is_cached:
-                df_itens.unpersist()
+            # Limpar cache
+            for df in [df_treino, df_itens]:
+                if df and df.is_cached:
+                    try:
+                        df.unpersist()
+                    except Exception as e:
+                        logger.error(f"Erro ao limpar cache: {str(e)}")
 
     def mostrar_info_dados(self, df_treino: DataFrame, df_itens: DataFrame) -> None:
         """
         Mostra informações detalhadas sobre os dados processados.
         
         Args:
-            df_treino: DataFrame Spark com dados de treino.
-            df_itens: DataFrame Spark com dados de itens.
+            df_treino: DataFrame com dados de treino
+            df_itens: DataFrame com dados dos itens
         """
         try:
-            # Verificar se a sessão do Spark está ativa
-            if self.spark is None or self.spark._sc._jsc is None:
-                logger.error("A sessão do Spark não está ativa.")
-                return
-
-            # Cache para múltiplas operações
+            self._verificar_spark_ativo()
+            
+            # Cache temporário
             df_treino.cache()
             df_itens.cache()
             
-            print("\nInformações dos dados de treino:")
+            # Informações gerais
+            logger.info("\nInformações dos dados de treino:")
             n_registros = df_treino.count()
             n_usuarios = df_treino.select("idUsuario").distinct().count()
             
-            print(f"Número de registros: {n_registros}")
-            print(f"Número de usuários únicos: {n_usuarios}")
+            logger.info(f"Número de registros: {n_registros}")
+            logger.info(f"Número de usuários únicos: {n_usuarios}")
             
             # Estatísticas do histórico
             tamanho_historico = df_treino.select(
@@ -863,16 +878,18 @@ class PreProcessadorDadosSpark:
                 max("tamanho").alias("maximo")
             ).collect()[0]
             
-            print("\nEstatísticas do histórico:")
-            print(f"Média de itens por usuário: {tamanho_historico['media']:.2f}")
-            print(f"Mínimo de itens: {tamanho_historico['minimo']}")
-            print(f"Máximo de itens: {tamanho_historico['maximo']}")
+            logger.info("\nEstatísticas do histórico:")
+            logger.info(f"Média de itens por usuário: {tamanho_historico['media']:.2f}")
+            logger.info(f"Mínimo de itens: {tamanho_historico['minimo']}")
+            logger.info(f"Máximo de itens: {tamanho_historico['maximo']}")
             
-            print("\nInformações dos dados de itens:")
+            # Informações dos itens
+            logger.info("\nInformações dos dados de itens:")
             n_itens = df_itens.count()
-            print(f"Número de itens: {n_itens}")
+            logger.info(f"Número de itens: {n_itens}")
             
-            print("\nPeríodo dos dados:")
+            # Período dos dados
+            logger.info("\nPeríodo dos dados:")
             df_itens.select(
                 min("DataPublicacao").alias("primeira_publicacao"),
                 max("DataPublicacao").alias("ultima_publicacao")
@@ -887,17 +904,18 @@ class PreProcessadorDadosSpark:
                 max("tamanho").alias("maximo")
             ).collect()[0]
             
-            print("\nEstatísticas do conteúdo:")
-            print(f"Tamanho médio do texto: {tamanho_conteudo['media']:.2f} caracteres")
-            print(f"Menor texto: {tamanho_conteudo['minimo']} caracteres")
-            print(f"Maior texto: {tamanho_conteudo['maximo']} caracteres")
+            logger.info("\nEstatísticas do conteúdo:")
+            logger.info(f"Tamanho médio do texto: {tamanho_conteudo['media']:.2f} caracteres")
+            logger.info(f"Menor texto: {tamanho_conteudo['minimo']} caracteres")
+            logger.info(f"Maior texto: {tamanho_conteudo['maximo']} caracteres")
             
         except Exception as e:
             logger.error(f"Erro ao mostrar informações: {str(e)}")
-            raise
         finally:
-            # Liberar cache
-            if 'df_treino' in locals() and df_treino.is_cached:
-                df_treino.unpersist()
-            if 'df_itens' in locals() and df_itens.is_cached:
-                df_itens.unpersist()
+            # Limpar cache
+            for df in [df_treino, df_itens]:
+                if df and df.is_cached:
+                    try:
+                        df.unpersist()
+                    except Exception as e:
+                        logger.error(f"Erro ao limpar cache: {str(e)}")

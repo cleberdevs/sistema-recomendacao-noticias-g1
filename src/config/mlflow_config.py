@@ -121,12 +121,13 @@ from contextlib import contextmanager
 logger = logging.getLogger(__name__)
 
 class MLflowConfig:
-    def __init__(self):
+    def __init__(self, user_name: str = "sistema-recomendacao"):
         self.tracking_uri = os.getenv('MLFLOW_TRACKING_URI', 'http://localhost:5000')
         self.experiment_name = os.getenv('MLFLOW_EXPERIMENT_NAME', 'recomendador_noticias')
         self.run_id = None
         self.ambiente = os.getenv('ENVIRONMENT', 'desenvolvimento')
         self.active_run = None
+        self.user_name = user_name
         logger.info(f"MLflow configurado com URI: {self.tracking_uri}")
 
     def setup_mlflow(self):
@@ -187,7 +188,9 @@ class MLflowConfig:
                 "ambiente": self.ambiente,
                 "versao_modelo": os.getenv('MODEL_VERSION', 'v1'),
                 "timestamp": datetime.now().isoformat(),
-                "nested": str(nested)
+                "nested": str(nested),
+                "mlflow.user": self.user_name,
+                "created_by": self.user_name
             }
             
             # Combinar com tags adicionais

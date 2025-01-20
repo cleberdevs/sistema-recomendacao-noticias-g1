@@ -4,13 +4,13 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Dense, Embedding, Flatten, Concatenate, Dropout
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 import pickle
 from datetime import datetime
 import mlflow
 from src.config.mlflow_config import MLflowConfig
 import logging
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class RecomendadorHibrido:
@@ -29,6 +29,16 @@ class RecomendadorHibrido:
         logger.info("Inicializando RecomendadorHibrido")
 
     def _construir_modelo_neural(self, n_usuarios, n_itens):
+        """
+        Constrói a arquitetura do modelo neural.
+        
+        Args:
+            n_usuarios: Número de usuários únicos
+            n_itens: Número de itens únicos
+            
+        Returns:
+            Modelo Keras compilado
+        """
         logger.info(f"Construindo modelo neural com {n_usuarios} usuários e {n_itens} itens")
         try:
             # Input layers
@@ -56,7 +66,7 @@ class RecomendadorHibrido:
             # Concatenate
             concat = Concatenate()([usuario_flat, item_flat, entrada_conteudo])
 
-            # Dense layers with better regularization
+            # Dense layers
             denso1 = Dense(128, activation='relu', name='dense_1')(concat)
             dropout1 = Dropout(0.3)(denso1)
             denso2 = Dense(64, activation='relu', name='dense_2')(dropout1)
@@ -69,7 +79,7 @@ class RecomendadorHibrido:
                 outputs=saida
             )
             
-            # Compile with better metrics
+            # Compile
             modelo.compile(
                 optimizer='adam',
                 loss='binary_crossentropy',
@@ -84,41 +94,100 @@ class RecomendadorHibrido:
             raise
 
     def _criar_features_conteudo(self, dados_itens):
+        """
+        Cria features de conteúdo usando TF-IDF.
+        
+        Args:
+            dados_itens: DataFrame Spark com os dados dos itens
+            
+        Returns:
+            array: Matrix de features TF-IDF
+        """
         logger.info("Criando features de conteúdo")
         try:
-            textos = dados_itens['conteudo_texto'].fillna('')
-            return self.tfidf.fit_transform(textos).toarray()
+            # Converter DataFrame Spark para Pandas
+            df_pandas = dados_itens.select("conteudo_texto").toPandas()
+            
+            # Preencher valores nulos
+            textos = df_pandas['conteudo_texto'].fillna('')
+            
+            # Criar features TF-IDF
+            features = self.tfidf.fit_transform(textos).toarray()
+            
+            logger.info(f"Features de conteúdo criadas com forma: {features.shape}")
+            return features
+            
         except Exception as e:
             logger.error(f"Erro ao criar features de conteúdo: {str(e)}")
             raise
 
     def _calcular_matriz_similaridade(self, features_conteudo):
+        """
+        Calcula matriz de similaridade entre itens.
+        
+        Args:
+            features_conteudo: Matrix de features TF-IDF
+            
+        Returns:
+            array: Matriz de similaridade
+        """
         logger.info("Calculando matriz de similaridade")
         return cosine_similarity(features_conteudo)
 
+    def _configurar_callbacks(self):
+        """
+        Configura callbacks para o treinamento.
+        
+        Returns:
+            list: Lista de callbacks Keras
+        """
+        return [
+            EarlyStopping(
+                monitor='val_loss',
+                patience=3,
+                restore_best_weights=True
+            ),
+            ReduceLROnPlateau(
+                monitor='val_loss',
+                factor=0.2,
+                patience=2,
+                min_lr=0.00001
+            )
+        ]
+
     def treinar(self, dados_treino, dados_itens):
+        """
+        Treina o modelo híbrido.
+        
+        Args:
+            dados_treino: DataFrame Spark com dados de treino
+            dados_itens: DataFrame Spark com dados dos itens
+            
+        Returns:
+            História do treinamento
+        """
         logger.info("Iniciando treinamento do modelo")
+        
         try:
+            # Verificar se os DataFrames são válidos
+            if dados_treino is None or dados_itens is None:
+                raise ValueError("Dados de treino ou itens são None")
+                
+            # Converter dados de treino para Pandas se necessário
+            if hasattr(dados_treino, 'toPandas'):
+                dados_treino = dados_treino.toPandas()
+            
             # Processar features de conteúdo
             features_conteudo = self._criar_features_conteudo(dados_itens)
             self.matriz_similaridade = self._calcular_matriz_similaridade(features_conteudo)
-
-            # Registrar parâmetros se MLflow estiver ativo
-            if mlflow.active_run():
-                parametros = {
-                    "dim_embedding": self.dim_embedding,
-                    "dim_features_texto": self.dim_features_texto,
-                    "tamanho_dados_treino": len(dados_treino),
-                    "tamanho_dados_itens": len(dados_itens)
-                }
-                self.mlflow_config.log_parametros(parametros)
 
             # Criar mapeamento usuário-item
             for _, linha in dados_treino.iterrows():
                 self.itens_usuario[linha['idUsuario']] = set(linha['historico'])
 
             # Armazenar features dos itens
-            for idx, linha in dados_itens.iterrows():
+            dados_itens_pandas = dados_itens.toPandas() if hasattr(dados_itens, 'toPandas') else dados_itens
+            for idx, linha in dados_itens_pandas.iterrows():
                 self.features_item[idx] = {
                     'vetor_conteudo': features_conteudo[idx],
                     'timestamp': linha['DataPublicacao'].timestamp()
@@ -136,7 +205,7 @@ class RecomendadorHibrido:
                 features_conteudo
             )
 
-            # Callbacks para early stopping e redução de learning rate
+            # Configurar callbacks
             callbacks = self._configurar_callbacks()
 
             # Treinar modelo
@@ -150,18 +219,6 @@ class RecomendadorHibrido:
                 verbose=1
             )
 
-            # Log métricas se MLflow estiver ativo
-            if mlflow.active_run():
-                metricas = {
-                    "loss_final": historia.history['loss'][-1],
-                    "accuracy_final": historia.history['accuracy'][-1],
-                    "val_loss_final": historia.history['val_loss'][-1],
-                    "val_accuracy_final": historia.history['val_accuracy'][-1],
-                    "precision_final": historia.history['precision'][-1],
-                    "recall_final": historia.history['recall'][-1]
-                }
-                self.mlflow_config.log_metricas(metricas)
-            
             logger.info("Treinamento concluído com sucesso")
             return historia
 
@@ -169,26 +226,17 @@ class RecomendadorHibrido:
             logger.error(f"Erro durante o treinamento: {str(e)}")
             raise
 
-    def _configurar_callbacks(self):
-        """Configura callbacks para o treinamento"""
-        from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-        
-        return [
-            EarlyStopping(
-                monitor='val_loss',
-                patience=3,
-                restore_best_weights=True
-            ),
-            ReduceLROnPlateau(
-                monitor='val_loss',
-                factor=0.2,
-                patience=2,
-                min_lr=0.00001
-            )
-        ]
-
     def _preparar_dados_treino(self, dados_treino, features_conteudo):
-        """Prepara os dados para treinamento do modelo neural"""
+        """
+        Prepara os dados para treinamento do modelo neural.
+        
+        Args:
+            dados_treino: DataFrame com dados de treino
+            features_conteudo: Matrix de features TF-IDF
+            
+        Returns:
+            tuple: Arrays com dados de treino preparados
+        """
         X_usuario, X_item, X_conteudo, y = [], [], [], []
         
         for _, linha in dados_treino.iterrows():
@@ -210,10 +258,25 @@ class RecomendadorHibrido:
                 X_conteudo.append(features_conteudo[item_id])
                 y.append(0)
         
-        return np.array(X_usuario), np.array(X_item), np.array(X_conteudo), np.array(y)
+        return (
+            np.array(X_usuario),
+            np.array(X_item),
+            np.array(X_conteudo),
+            np.array(y)
+        )
 
     def _gerar_amostras_negativas(self, historico_positivo, n_itens, n_amostras=None):
-        """Gera amostras negativas aleatórias"""
+        """
+        Gera amostras negativas aleatórias.
+        
+        Args:
+            historico_positivo: Lista de itens já vistos
+            n_itens: Número total de itens
+            n_amostras: Número de amostras negativas a gerar
+            
+        Returns:
+            array: Índices das amostras negativas
+        """
         if n_amostras is None:
             n_amostras = len(historico_positivo)
             
@@ -227,6 +290,16 @@ class RecomendadorHibrido:
         )
 
     def prever(self, id_usuario, n_recomendacoes=10):
+        """
+        Gera recomendações para um usuário.
+        
+        Args:
+            id_usuario: ID do usuário
+            n_recomendacoes: Número de recomendações a gerar
+            
+        Returns:
+            list: Lista de IDs dos itens recomendados
+        """
         logger.info(f"Gerando previsões para usuário {id_usuario}")
         try:
             if id_usuario not in self.itens_usuario:
@@ -239,7 +312,7 @@ class RecomendadorHibrido:
             conteudo_input = np.array([self.features_item[i]['vetor_conteudo'] 
                                      for i in todos_itens])
 
-            # Gerar previsões em lotes para melhor performance
+            # Gerar previsões em lotes
             batch_size = 1024
             previsoes = []
             
@@ -269,7 +342,12 @@ class RecomendadorHibrido:
             raise
 
     def _recomendacoes_usuario_novo(self):
-        """Recomendações para usuários novos baseadas em popularidade e recência"""
+        """
+        Gera recomendações para usuários novos.
+        
+        Returns:
+            list: Lista de IDs dos itens recomendados
+        """
         logger.info("Gerando recomendações para usuário novo")
         try:
             # Ordenar itens por timestamp (recência)
@@ -284,6 +362,12 @@ class RecomendadorHibrido:
             raise
 
     def salvar_modelo(self, caminho):
+        """
+        Salva o modelo em disco.
+        
+        Args:
+            caminho: Caminho onde salvar o modelo
+        """
         logger.info(f"Salvando modelo em {caminho}")
         try:
             dados_modelo = {
@@ -309,6 +393,15 @@ class RecomendadorHibrido:
 
     @classmethod
     def carregar_modelo(cls, caminho):
+        """
+        Carrega um modelo salvo.
+        
+        Args:
+            caminho: Caminho do modelo salvo
+            
+        Returns:
+            RecomendadorHibrido: Instância do modelo carregado
+        """
         logger.info(f"Carregando modelo de {caminho}")
         try:
             with open(caminho, 'rb') as f:

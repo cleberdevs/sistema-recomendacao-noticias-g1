@@ -1836,73 +1836,7 @@ def limpar_diretorio_checkpoints():
     except Exception as e:
         logger.error(f"Erro ao limpar diretório de checkpoints: {str(e)}")
 
-'''def configurar_spark(app_name="RecomendadorNoticias", master="local[*]"):
-    """
-    Configura e retorna uma sessão Spark com configurações otimizadas.
-    
-    Args:
-        app_name: Nome da aplicação Spark
-        master: URL do master Spark
-        
-    Returns:
-        SparkSession configurada
-    """
-    try:
-        # Forçar limpeza de memória
-        gc.collect()
-        
-        # Limpar sessões anteriores
-        if SparkSession._instantiatedSession:
-            try:
-                SparkSession._instantiatedSession.stop()
-                time.sleep(2)
-            except Exception as e:
-                logger.warning(f"Erro ao parar sessão anterior: {str(e)}")
-        
-        # Limpar diretório de checkpoints
-        limpar_diretorio_checkpoints()
-            
-        # Configurar ambiente
-        configurar_ambiente_spark()
-        
-        # Criar sessão com configurações otimizadas
-        spark = SparkSession.builder \
-            .appName(app_name) \
-            .master(master) \
-            .config("spark.driver.memory", "8g") \
-            .config("spark.executor.memory", "8g") \
-            .config("spark.sql.execution.arrow.maxRecordsPerBatch", "1000") \
-            .config("spark.sql.execution.arrow.pyspark.enabled", "false") \
-            .config("spark.sql.execution.arrow.pyspark.fallback.enabled", "true") \
-            .config("spark.sql.execution.arrow.timezone", "UTC") \
-            .config("spark.sql.execution.arrow.pyspark.selfDestruct.enabled", "true") \
-            .config("spark.network.timeout", "800s") \
-            .config("spark.executor.heartbeatInterval", "30s") \
-            .config("spark.sql.broadcastTimeout", "600s") \
-            .config("spark.sql.autoBroadcastJoinThreshold", "-1") \
-            .config("spark.sql.shuffle.partitions", "200") \
-            .config("spark.default.parallelism", "200") \
-            .config("spark.memory.offHeap.enabled", "true") \
-            .config("spark.memory.offHeap.size", "2g") \
-            .getOrCreate()
-        
-        # Configurações adicionais
-        spark.sparkContext.setLogLevel("WARN")
-        spark.sparkContext.setCheckpointDir("checkpoints")
-        
-        # Verificar se a sessão está ativa
-        if not verificar_conexao_spark(spark):
-            raise RuntimeError("Falha ao inicializar sessão Spark")
-        
-        # Aguardar inicialização completa
-        time.sleep(2)
-            
-        logger.info("Sessão Spark inicializada com sucesso")
-        return spark
-        
-    except Exception as e:
-        logger.error(f"Erro ao configurar Spark: {str(e)}")
-        raise'''
+
 
 def configurar_spark(app_name="RecomendadorNoticias", master="local[*]"):
     """

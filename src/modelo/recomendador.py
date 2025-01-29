@@ -2090,7 +2090,7 @@ class RecomendadorHibrido:
             raise
 
 
-    def treinar(self, dados_treino, dados_itens):
+    '''def treinar(self, dados_treino, dados_itens):
         """
         Treina o modelo com os dados fornecidos.
 
@@ -2196,6 +2196,143 @@ class RecomendadorHibrido:
                     "n_exemplos_treino": len(X_usuario),
                     "n_exemplos_positivos": np.sum(y == 1),
                     "n_exemplos_negativos": np.sum(y == 0)
+                }
+                self.mlflow_config.log_metricas(metricas)
+            
+            logger.info("Treinamento concluído com sucesso")
+            return historia
+            
+        except Exception as e:
+            logger.error(f"Erro durante treinamento: {str(e)}")
+            raise'''
+    
+    def treinar(self, dados_treino, dados_itens):
+        """
+        Treina o modelo com os dados fornecidos e técnicas para reduzir overfitting.
+
+        Args:
+            dados_treino: DataFrame Spark com dados de treino
+            dados_itens: DataFrame Spark com dados dos itens
+
+        Returns:
+            History: Histórico de treinamento do modelo
+        """
+        logger.info("Iniciando treinamento do modelo")
+        try:
+            # Definir limites de datas
+            max_year = 2030
+            min_year = 1970
+            
+            # Filtrar datas válidas antes da conversão
+            dados_itens = dados_itens.filter(
+                (F.year(F.col("DataPublicacao")) >= min_year) &
+                (F.year(F.col("DataPublicacao")) <= max_year)
+            )
+            
+            # Converter dados Spark para pandas com tratamento de erro
+            try:
+                logger.info("Convertendo dados Spark para pandas")
+                dados_treino_pd = dados_treino.toPandas()
+                dados_itens_pd = dados_itens.toPandas()
+                
+                logger.info(f"Dados convertidos - Treino: {dados_treino_pd.shape}, Itens: {dados_itens_pd.shape}")
+            except ValueError as e:
+                if "year" in str(e) and "out of range" in str(e):
+                    logger.error("Detectadas datas inválidas nos dados")
+                    raise ValueError("Datas inválidas detectadas nos dados. Por favor, verifique o intervalo de datas.")
+                raise
+            
+            # Validar dados
+            self._validar_dados_entrada(dados_treino_pd, dados_itens_pd)
+            
+            # Verificar correspondência de IDs
+            self._verificar_correspondencia_ids(dados_treino_pd, dados_itens_pd)
+            
+            # Criar features de conteúdo
+            features_conteudo = self._criar_features_conteudo_pandas(dados_itens_pd)
+            
+            # Criar mapeamentos
+            self._criar_mapeamentos(dados_treino_pd, dados_itens_pd, features_conteudo)
+            
+            # Preparar dados de treino
+            logger.info("Preparando dados para treinamento")
+            X_usuario, X_item, X_conteudo, y = self._preparar_dados_treino_em_lotes(
+                dados_treino_pd, 
+                features_conteudo
+            )
+            
+            if len(X_usuario) == 0:
+                raise ValueError("Nenhum exemplo de treino gerado")
+            
+            logger.info(f"Dados de treino preparados: {len(X_usuario)} exemplos")
+            logger.info(f"Distribuição de classes: {np.bincount(y)}")
+            
+            # Calcular pesos das classes para balanceamento
+            n_neg = np.sum(y == 0)
+            n_pos = np.sum(y == 1)
+            total = n_neg + n_pos
+            weight_for_0 = (1 / n_neg) * (total / 2.0)
+            weight_for_1 = (1 / n_pos) * (total / 2.0)
+            class_weight = {0: weight_for_0, 1: weight_for_1}
+            
+            logger.info(f"Pesos das classes: Classe 0: {weight_for_0:.2f}, Classe 1: {weight_for_1:.2f}")
+            
+            # Construir modelo
+            self.modelo = self._construir_modelo_neural(
+                len(self.itens_usuario),
+                self.item_count
+            )
+            
+            # Configurar callbacks aprimorados
+            callbacks = [
+                EarlyStopping(
+                    monitor='val_loss',
+                    patience=4,  # Aumentado para dar mais chances ao modelo
+                    restore_best_weights=True,
+                    mode='min'
+                ),
+                ReduceLROnPlateau(
+                    monitor='val_loss',
+                    factor=0.5,  # Redução mais agressiva do learning rate
+                    patience=2,
+                    min_lr=0.00001,
+                    verbose=1
+                ),
+                tf.keras.callbacks.ModelCheckpoint(
+                    'modelos/checkpoints/modelo_epoch_{epoch:02d}.h5',
+                    monitor='val_loss',
+                    save_best_only=True,
+                    mode='min'
+                )
+            ]
+            
+            # Treinar modelo com técnicas anti-overfitting
+            logger.info("Iniciando treinamento do modelo neural")
+            historia = self.modelo.fit(
+                [X_usuario, X_item, X_conteudo],
+                y,
+                validation_split=0.2,
+                epochs=15,  # Aumentado número de épocas
+                batch_size=32,  # Reduzido batch size
+                callbacks=callbacks,
+                class_weight=class_weight,  # Adicionado balanceamento de classes
+                shuffle=True,  # Garantir shuffle dos dados
+                verbose=1
+            )
+            
+            # Registrar métricas no MLflow
+            if mlflow.active_run():
+                metricas = {
+                    "loss_final": historia.history['loss'][-1],
+                    "val_loss_final": historia.history['val_loss'][-1],
+                    "accuracy_final": historia.history['accuracy'][-1],
+                    "val_accuracy_final": historia.history['val_accuracy'][-1],
+                    "n_usuarios": len(self.itens_usuario),
+                    "n_itens": self.item_count,
+                    "n_exemplos_treino": len(X_usuario),
+                    "n_exemplos_positivos": n_pos,
+                    "n_exemplos_negativos": n_neg,
+                    "ratio_classes": n_pos / n_neg
                 }
                 self.mlflow_config.log_metricas(metricas)
             

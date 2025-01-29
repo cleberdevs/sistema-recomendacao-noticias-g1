@@ -1347,8 +1347,9 @@ import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import tensorflow as tf
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, Dense, Embedding, Flatten, Concatenate, Dropout
+from tensorflow.keras.layers import Input, Dense, Embedding, Flatten, Concatenate, Dropout, BatchNormalization
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 import pickle
 from datetime import datetime
@@ -1360,6 +1361,8 @@ import time
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.functions import year, expr
+from tensorflow.keras.regularizers import l2, l1
+from tensorflow.keras.constraints import MaxNorm
 
 try:
     nltk.download('stopwords')
@@ -1879,7 +1882,7 @@ class RecomendadorHibrido:
             logger.error(f"Erro ao preparar dados de treino: {str(e)}")
             raise
 
-    def _construir_modelo_neural(self, n_usuarios, n_itens):
+    '''def _construir_modelo_neural(self, n_usuarios, n_itens):
         """
         Constrói o modelo neural híbrido.
         
@@ -1949,6 +1952,136 @@ class RecomendadorHibrido:
             # Log model summary
             logger.info("Arquitetura do modelo:")
             modelo.summary(print_fn=logger.info)
+            
+            return modelo
+            
+        except Exception as e:
+            logger.error(f"Erro ao construir modelo neural: {str(e)}")
+            raise'''
+    
+    def _construir_modelo_neural(self, n_usuarios, n_itens):
+        """
+        Constrói o modelo neural híbrido com forte regularização para reduzir overfitting.
+        """
+        logger.info(f"Construindo modelo neural com {n_usuarios} usuários e {n_itens} itens")
+        
+        try:
+            # Configurações de regularização
+            embedding_dim = 16
+            dense_units = [32, 16]  # Unidades nas camadas densas
+            dropout_rates = [0.4, 0.3]  # Taxas de dropout mais agressivas
+            l2_factors = {
+                'embedding': 0.02,
+                'dense': 0.01,
+                'output': 0.01
+            }
+            
+            # Input layers
+            entrada_usuario = Input(shape=(1,), name='input_usuario')
+            entrada_item = Input(shape=(1,), name='input_item')
+            entrada_conteudo = Input(shape=(self.dim_features_texto,), name='input_conteudo')
+
+            # Embedding com forte regularização
+            embedding_usuario = Embedding(
+                input_dim=n_usuarios,
+                output_dim=embedding_dim,
+                embeddings_regularizer=l2(l2_factors['embedding']),
+                embeddings_constraint=tf.keras.constraints.MaxNorm(2.0),
+                name='embedding_usuario'
+            )(entrada_usuario)
+            
+            embedding_item = Embedding(
+                input_dim=n_itens,
+                output_dim=embedding_dim,
+                embeddings_regularizer=l2(l2_factors['embedding']),
+                embeddings_constraint=tf.keras.constraints.MaxNorm(2.0),
+                name='embedding_item'
+            )(entrada_item)
+
+            # Flatten embeddings
+            usuario_flat = Flatten(name='flatten_usuario')(embedding_usuario)
+            item_flat = Flatten(name='flatten_item')(embedding_item)
+
+            # Redução de dimensionalidade do conteúdo com regularização
+            conteudo_dense = Dense(
+                32,
+                activation='relu',
+                kernel_regularizer=l2(l2_factors['dense']),
+                kernel_constraint=tf.keras.constraints.MaxNorm(2.0),
+                name='conteudo_reduction'
+            )(entrada_conteudo)
+            conteudo_norm = BatchNormalization(name='batch_norm_conteudo')(conteudo_dense)
+            conteudo_drop = Dropout(0.3, name='dropout_conteudo')(conteudo_norm)
+
+            # Concatenação com normalização
+            concat = Concatenate(name='concatenate')([
+                usuario_flat,
+                item_flat,
+                conteudo_drop
+            ])
+            concat_norm = BatchNormalization(name='batch_norm_concat')(concat)
+            
+            # Primeira camada densa
+            dense1 = Dense(
+                dense_units[0],
+                activation='relu',
+                kernel_regularizer=l2(l2_factors['dense']),
+                kernel_constraint=tf.keras.constraints.MaxNorm(2.0),
+                activity_regularizer=l1(0.01),
+                name='dense_1'
+            )(concat_norm)
+            batch1 = BatchNormalization(name='batch_norm_1')(dense1)
+            drop1 = Dropout(dropout_rates[0], name='dropout_1')(batch1)
+            
+            # Segunda camada densa
+            dense2 = Dense(
+                dense_units[1],
+                activation='relu',
+                kernel_regularizer=l2(l2_factors['dense']),
+                kernel_constraint=tf.keras.constraints.MaxNorm(2.0),
+                activity_regularizer=l1(0.01),
+                name='dense_2'
+            )(drop1)
+            batch2 = BatchNormalization(name='batch_norm_2')(dense2)
+            drop2 = Dropout(dropout_rates[1], name='dropout_2')(batch2)
+
+            # Camada de saída com regularização
+            saida = Dense(
+                1,
+                activation='sigmoid',
+                kernel_regularizer=l2(l2_factors['output']),
+                kernel_constraint=tf.keras.constraints.MaxNorm(1.0),
+                name='output'
+            )(drop2)
+
+            # Criar modelo
+            modelo = Model(
+                inputs=[entrada_usuario, entrada_item, entrada_conteudo],
+                outputs=saida,
+                name='modelo_hibrido_regularizado'
+            )
+            
+            # Otimizador com clipping de gradientes
+            optimizer = tf.keras.optimizers.Adam(
+                learning_rate=0.001,
+                beta_1=0.9,
+                beta_2=0.999,
+                epsilon=1e-07,
+                clipnorm=1.0,  # Clipping de gradientes
+                clipvalue=0.5
+            )
+            
+            # Compilar modelo
+            modelo.compile(
+                optimizer=optimizer,
+                loss=tf.keras.losses.BinaryCrossentropy(label_smoothing=0.1),  # Label smoothing
+                metrics=[
+                    'accuracy',
+                    tf.keras.metrics.Precision(),
+                    tf.keras.metrics.Recall(),
+                    tf.keras.metrics.AUC()
+                ]
+            )
             
             return modelo
             

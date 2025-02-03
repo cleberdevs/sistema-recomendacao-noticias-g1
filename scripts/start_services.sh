@@ -28,12 +28,29 @@ else
     log "PySpark já está instalado."
 fi
 
+# Obter o diretório raiz do projeto (um nível acima da pasta scripts)
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Configurar variáveis de ambiente para o Flask
-export PYTHONPATH=$(pwd)/src  # Adiciona o diretório src ao PYTHONPATH
-export FLASK_APP=src.api.app  # Define o módulo Flask
+export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH:-}"
+export FLASK_APP="src.api.app:app"
 export FLASK_ENV=development
 export MLFLOW_TRACKING_URI=http://localhost:5000
 
+# Debug: mostrar informações importantes
+log "PYTHONPATH: ${PYTHONPATH}"
+log "Diretório do projeto: ${PROJECT_ROOT}"
+
+# Verificar se o arquivo app.py existe
+if [ ! -f "${PROJECT_ROOT}/src/api/app.py" ]; then
+    error_log "Arquivo app.py não encontrado em ${PROJECT_ROOT}/src/api/app.py"
+    exit 1
+fi
+
+# Mudar para o diretório raiz do projeto
+cd "${PROJECT_ROOT}"
+
 # Iniciar servidor Flask
 log "Iniciando servidor Flask..."
-flask run --host=0.0.0.0 --port=8000
+python -m flask run --host=0.0.0.0 --port=8000
+

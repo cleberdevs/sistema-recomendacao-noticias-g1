@@ -1989,25 +1989,54 @@ def treinar_modelo(spark):
             for diretorio in diretorios:
                 criar_diretorio_se_nao_existe(diretorio)
             
-            # Carregar arquivos
-            logger.info("Carregando arquivos de dados")
-            arquivos_treino = carregar_arquivos_dados('dados/brutos/treino_parte*.csv')
-            arquivos_itens = carregar_arquivos_dados('dados/brutos/itens/itens-parte*.csv')
-            
-            if not arquivos_treino or not arquivos_itens:
-                raise ValueError("Arquivos de dados não encontrados")
-            
-            logger.info(f"Arquivos de treino encontrados: {len(arquivos_treino)}")
-            logger.info(f"Arquivos de itens encontrados: {len(arquivos_itens)}")
-            
-            # Processar dados com melhor gestão de recursos
+            # Inicializar preprocessador
             preprocessador = PreProcessadorDadosSpark(spark)
+            
+            # Verificar se existem dados processados
+            dados_processados_exist = os.path.exists("dados/processados/dados_treino_processados.parquet") and \
+                                    os.path.exists("dados/processados/dados_itens_processados.parquet")
+            
             try:
-                # Processar em lotes menores
-                dados_treino, dados_itens = preprocessador.processar_dados_treino(
-                    arquivos_treino,
-                    arquivos_itens
-                )
+                if dados_processados_exist:
+                    logger.info("Encontrados dados processados. Tentando carregar...")
+                    try:
+                        # Carregar dados processados
+                        dados_treino = spark.read.parquet("dados/processados/dados_treino_processados.parquet")
+                        dados_itens = spark.read.parquet("dados/processados/dados_itens_processados.parquet")
+                        
+                        # Verificar se os dados são válidos
+                        if dados_treino.count() > 0 and dados_itens.count() > 0:
+                            logger.info("Dados processados carregados com sucesso")
+                            
+                            # Mostrar estatísticas dos dados carregados
+                            logger.info(f"Registros de treino: {dados_treino.count()}")
+                            logger.info(f"Registros de itens: {dados_itens.count()}")
+                        else:
+                            logger.warning("Dados processados vazios ou inválidos")
+                            dados_processados_exist = False
+                            
+                    except Exception as e:
+                        logger.warning(f"Erro ao carregar dados processados: {str(e)}")
+                        dados_processados_exist = False
+                
+                if not dados_processados_exist:
+                    logger.info("Processando dados brutos...")
+                    # Carregar arquivos
+                    logger.info("Carregando arquivos de dados")
+                    arquivos_treino = carregar_arquivos_dados('dados/brutos/treino_parte*.csv')
+                    arquivos_itens = carregar_arquivos_dados('dados/brutos/itens/itens-parte*.csv')
+                    
+                    if not arquivos_treino or not arquivos_itens:
+                        raise ValueError("Arquivos de dados não encontrados")
+                    
+                    logger.info(f"Arquivos de treino encontrados: {len(arquivos_treino)}")
+                    logger.info(f"Arquivos de itens encontrados: {len(arquivos_itens)}")
+                    
+                    # Processar dados
+                    dados_treino, dados_itens = preprocessador.processar_dados_treino(
+                        arquivos_treino,
+                        arquivos_itens
+                    )
                 
                 # Persistir DataFrames
                 dados_treino.persist()

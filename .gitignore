@@ -45,3 +45,6 @@ dados/processados/
 
 # Modelos
 modelos/modelos_salvos/
+modelos/checkpoints/
+
+checkpoints/

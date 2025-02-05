@@ -816,6 +816,8 @@ class RecomendadorHibrido:
             logger.error(f"Erro ao carregar modelo: {str(e)}")
             raise'''
 
+import json
+import os
 import numpy as np
 import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -917,6 +919,87 @@ class RecomendadorHibrido:
         self.features_item = {}
         self.mlflow_config = mlflow_config if mlflow_config else MLflowConfig()
         logger.info("RecomendadorHibrido inicializado")
+
+    def _salvar_checkpoint_exemplos(self, exemplos, caminho_base):
+        """
+        Salva os exemplos processados em checkpoint.
+        """
+        try:
+            caminho = f"{caminho_base}/exemplos_processados"
+            os.makedirs(caminho, exist_ok=True)
+            
+            # Salvar arrays
+            np.save(f"{caminho}/X_usuario.npy", exemplos[0])
+            np.save(f"{caminho}/X_item.npy", exemplos[1])
+            np.save(f"{caminho}/X_conteudo.npy", exemplos[2])
+            np.save(f"{caminho}/y.npy", exemplos[3])
+            
+            # Salvar metadados
+            metadados = {
+                "timestamp": datetime.now().isoformat(),
+                "shapes": {
+                    "X_usuario": exemplos[0].shape,
+                    "X_item": exemplos[1].shape,
+                    "X_conteudo": exemplos[2].shape,
+                    "y": exemplos[3].shape
+                },
+                "n_exemplos": len(exemplos[3])
+            }
+            
+            with open(f"{caminho}/metadados.json", "w") as f:
+                json.dump(metadados, f, indent=4)
+                
+            logger.info(f"Checkpoint salvo em {caminho}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erro ao salvar checkpoint: {str(e)}")
+            return False
+
+    def _carregar_checkpoint_exemplos(self, caminho_base):
+        """
+        Carrega exemplos processados de checkpoint.
+        """
+        try:
+            caminho = f"{caminho_base}/exemplos_processados"
+            
+            if not os.path.exists(caminho):
+                logger.info("Checkpoint não encontrado")
+                return None
+                
+            # Carregar metadados primeiro para verificação
+            with open(f"{caminho}/metadados.json", "r") as f:
+                metadados = json.load(f)
+                
+            # Carregar arrays
+            X_usuario = np.load(f"{caminho}/X_usuario.npy", allow_pickle=True)
+            X_item = np.load(f"{caminho}/X_item.npy")
+            X_conteudo = np.load(f"{caminho}/X_conteudo.npy")
+            y = np.load(f"{caminho}/y.npy")
+            
+            logger.info(f"Checkpoint carregado de {caminho}")
+            logger.info(f"Exemplos carregados: {len(y)}")
+            
+            return X_usuario, X_item, X_conteudo, y
+            
+        except Exception as e:
+            logger.error(f"Erro ao carregar checkpoint: {str(e)}")
+            return None
+
+    def limpar_checkpoints(self, caminho_checkpoints="dados/checkpoints"):
+        """
+        Limpa checkpoints antigos.
+        """
+        try:
+            caminho = f"{caminho_checkpoints}/exemplos_processados"
+            if os.path.exists(caminho):
+                for arquivo in os.listdir(caminho):
+                    os.remove(os.path.join(caminho, arquivo))
+                os.rmdir(caminho)
+                logger.info(f"Checkpoints removidos de {caminho}")
+        except Exception as e:
+            logger.error(f"Erro ao limpar checkpoints: {str(e)}")
+
 
     def _criar_features_conteudo_pandas(self, dados_itens_pd):
         """
@@ -1200,13 +1283,19 @@ class RecomendadorHibrido:
             dropout_rate = 0.3
             l2_lambda = 0.01
             
+            # Calcular dimensão total da concatenação
+            input_dim = (2 * embedding_dim) + self.dim_features_texto  # 2 embeddings + features de texto
+            
             # Input layers
             entrada_usuario = Input(shape=(1,), dtype=tf.string, name='usuario_input')
             entrada_item = Input(shape=(1,), dtype=tf.int32, name='item_input')
             entrada_conteudo = Input(shape=(self.dim_features_texto,), name='conteudo_input')
 
             # Camada de processamento de strings
-            string_to_index = StringToIndexLayer(max_tokens=n_usuarios + 1, name='string_to_index')
+            string_to_index = StringToIndexLayer(
+                max_tokens=n_usuarios + 1, 
+                name='string_to_index'
+            )
             # Adaptar a camada com todos os IDs de usuários possíveis
             string_to_index.adapt(tf.constant(list(self.itens_usuario.keys())))
             
@@ -1239,16 +1328,18 @@ class RecomendadorHibrido:
                 entrada_conteudo
             ])
             
-            # Camadas densas
+            # Primeira camada densa com input_shape explícito
             x = Dense(
                 dense_units[0],
                 activation='relu',
                 kernel_regularizer=l2(l2_lambda),
+                input_shape=(input_dim,),  # Dimensão de entrada explícita
                 name='dense_1'
             )(concat)
             x = BatchNormalization(name='batch_norm_1')(x)
             x = Dropout(dropout_rate, name='dropout_1')(x)
             
+            # Segunda camada densa
             x = Dense(
                 dense_units[1],
                 activation='relu',
@@ -1268,20 +1359,19 @@ class RecomendadorHibrido:
                 name='modelo_recomendacao'
             )
             
-            # Configurar otimizador
-            optimizer = tf.keras.optimizers.Adam(
-                learning_rate=0.001,
-                clipnorm=1.0
-            )
-            
             # Compilar modelo
             modelo.compile(
-                optimizer=optimizer,
+                optimizer=tf.keras.optimizers.Adam(learning_rate=0.001, clipnorm=1.0),
                 loss='binary_crossentropy',
                 metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
             )
             
-            # Mostrar sumário do modelo
+            # Log das dimensões
+            logger.info("\nDimensões das camadas:")
+            logger.info(f"Input dim total: {input_dim}")
+            logger.info(f"Embedding dim: {embedding_dim}")
+            logger.info(f"Features texto dim: {self.dim_features_texto}")
+            
             logger.info("\nArquitetura do modelo:")
             modelo.summary(print_fn=logger.info)
             
@@ -1365,13 +1455,22 @@ class RecomendadorHibrido:
     
 
     def _preparar_dados_treino_em_lotes(self, dados_treino_pd, features_conteudo, 
-                                   max_exemplos_total=1000000,
-                                   max_exemplos_por_usuario=100,
-                                   batch_size=10000):
+                                    max_exemplos_total=1000000,
+                                    max_exemplos_por_usuario=100,
+                                    batch_size=10000,
+                                    caminho_checkpoints="dados/checkpoints"):
         """
         Prepara os dados de treino mantendo strings para IDs de usuários.
+        Utiliza sistema de checkpoints.
         """
         logger.info("Preparando dados de treino em lotes")
+        
+        # Tentar carregar checkpoint
+        exemplos = self._carregar_checkpoint_exemplos(caminho_checkpoints)
+        if exemplos is not None:
+            return exemplos
+            
+        logger.info("Checkpoint não encontrado, processando dados...")
         
         X_usuario_list = []
         X_item_list = []
@@ -1413,7 +1512,7 @@ class RecomendadorHibrido:
                 # Adicionar exemplos positivos
                 for item_idx in historico_amostrado:
                     if item_idx in self.features_item:
-                        X_usuario_list.append(str(usuario_id))  # Manter como string
+                        X_usuario_list.append(str(usuario_id))
                         X_item_list.append(item_idx)
                         X_conteudo_list.append(self.features_item[item_idx]['vetor_conteudo'])
                         y_list.append(1)
@@ -1427,7 +1526,7 @@ class RecomendadorHibrido:
                 )
                 
                 for item_idx in itens_negativos:
-                    X_usuario_list.append(str(usuario_id))  # Manter como string
+                    X_usuario_list.append(str(usuario_id))
                     X_item_list.append(item_idx)
                     X_conteudo_list.append(self.features_item[item_idx]['vetor_conteudo'])
                     y_list.append(0)
@@ -1437,9 +1536,20 @@ class RecomendadorHibrido:
                 if usuarios_processados % 100 == 0:
                     logger.info(f"Processados {usuarios_processados}/{total_usuarios} usuários "
                             f"({len(y_list)} exemplos gerados)")
+                    
+                # Salvar checkpoint intermediário a cada batch_size exemplos
+                if len(y_list) % batch_size == 0:
+                    logger.info(f"Salvando checkpoint intermediário com {len(y_list)} exemplos...")
+                    exemplos_temp = (
+                        np.array(X_usuario_list, dtype=object),
+                        np.array(X_item_list, dtype=np.int32),
+                        np.array(X_conteudo_list, dtype=np.float32),
+                        np.array(y_list, dtype=np.int32)
+                    )
+                    self._salvar_checkpoint_exemplos(exemplos_temp, caminho_checkpoints)
             
             # Converter para arrays numpy com tipos apropriados
-            X_usuario = np.array(X_usuario_list, dtype=object)  # Usar dtype=object para strings
+            X_usuario = np.array(X_usuario_list, dtype=object)  # dtype=object para strings
             X_item = np.array(X_item_list, dtype=np.int32)
             X_conteudo = np.array(X_conteudo_list, dtype=np.float32)
             y = np.array(y_list, dtype=np.int32)
@@ -1457,7 +1567,11 @@ class RecomendadorHibrido:
             logger.info(f"X_conteudo: {X_conteudo.shape}, dtype: {X_conteudo.dtype}")
             logger.info(f"y: {y.shape}, dtype: {y.dtype}")
             
-            return X_usuario, X_item, X_conteudo, y
+            # Salvar checkpoint final
+            exemplos = (X_usuario, X_item, X_conteudo, y)
+            self._salvar_checkpoint_exemplos(exemplos, caminho_checkpoints)
+            
+            return exemplos
             
         except Exception as e:
             logger.error(f"Erro ao preparar dados de treino: {str(e)}")
@@ -1545,7 +1659,7 @@ class RecomendadorHibrido:
             
         except Exception as e:
             logger.error(f"Erro durante treinamento: {str(e)}")
-            raise
+        raise
 
     def prever(self, usuario_id, candidatos=None, k=10):
         """

@@ -845,6 +845,31 @@ from nltk.corpus import stopwords
 
 logger = logging.getLogger(__name__)
 
+class CastLayer(tf.keras.layers.Layer):
+    def __init__(self, target_dtype, **kwargs):
+        super().__init__(**kwargs)
+        self._target_dtype = target_dtype  # Use um nome diferente para o atributo
+
+    def call(self, inputs):
+        return tf.cast(inputs, self._target_dtype)
+
+class StringToIndexLayer(tf.keras.layers.Layer):
+    def __init__(self, max_tokens, **kwargs):
+        super().__init__(**kwargs)
+        self.vectorize_layer = tf.keras.layers.TextVectorization(
+            max_tokens=max_tokens,
+            output_mode='int',
+            output_sequence_length=1
+        )
+    
+    def adapt(self, data):
+        self.vectorize_layer.adapt(data)
+    
+    def call(self, inputs):
+        x = self.vectorize_layer(inputs)
+        return tf.cast(x, tf.int32)  # Cast direto aqui, sem usar CastLayer
+
+
 class RecomendadorHibrido:
     def __init__(self, dim_embedding=32, dim_features_texto=100, mlflow_config=None):
         """
@@ -1067,7 +1092,7 @@ class RecomendadorHibrido:
             logger.error(f"Erro durante criação de mapeamentos: {str(e)}")
             raise
 
-    def _construir_modelo_neural(self, n_usuarios, n_itens):
+    '''def _construir_modelo_neural(self, n_usuarios, n_itens):
         """
         Constrói o modelo neural híbrido mantendo IDs originais dos usuários.
         """
@@ -1160,9 +1185,115 @@ class RecomendadorHibrido:
             
         except Exception as e:
             logger.error(f"Erro ao construir modelo neural: {str(e)}")
+            raise'''
+    
+    def _construir_modelo_neural(self, n_usuarios, n_itens):
+        """
+        Constrói o modelo neural híbrido mantendo IDs como strings.
+        """
+        logger.info(f"Construindo modelo neural com {n_usuarios} usuários e {n_itens} itens")
+        
+        try:
+            # Configurações
+            embedding_dim = 16
+            dense_units = [32, 16]
+            dropout_rate = 0.3
+            l2_lambda = 0.01
+            
+            # Input layers
+            entrada_usuario = Input(shape=(1,), dtype=tf.string, name='usuario_input')
+            entrada_item = Input(shape=(1,), dtype=tf.int32, name='item_input')
+            entrada_conteudo = Input(shape=(self.dim_features_texto,), name='conteudo_input')
+
+            # Camada de processamento de strings
+            string_to_index = StringToIndexLayer(max_tokens=n_usuarios + 1, name='string_to_index')
+            # Adaptar a camada com todos os IDs de usuários possíveis
+            string_to_index.adapt(tf.constant(list(self.itens_usuario.keys())))
+            
+            # Converter strings para índices
+            usuario_idx = string_to_index(entrada_usuario)
+
+            # Embedding layers
+            embedding_usuario = Embedding(
+                input_dim=n_usuarios + 1,
+                output_dim=embedding_dim,
+                embeddings_regularizer=l2(l2_lambda),
+                name='usuario_embedding'
+            )(usuario_idx)
+            
+            embedding_item = Embedding(
+                input_dim=n_itens,
+                output_dim=embedding_dim,
+                embeddings_regularizer=l2(l2_lambda),
+                name='item_embedding'
+            )(entrada_item)
+
+            # Flatten embeddings
+            usuario_flat = Flatten(name='usuario_flatten')(embedding_usuario)
+            item_flat = Flatten(name='item_flatten')(embedding_item)
+
+            # Concatenação
+            concat = Concatenate(name='concat_layer')([
+                usuario_flat,
+                item_flat,
+                entrada_conteudo
+            ])
+            
+            # Camadas densas
+            x = Dense(
+                dense_units[0],
+                activation='relu',
+                kernel_regularizer=l2(l2_lambda),
+                name='dense_1'
+            )(concat)
+            x = BatchNormalization(name='batch_norm_1')(x)
+            x = Dropout(dropout_rate, name='dropout_1')(x)
+            
+            x = Dense(
+                dense_units[1],
+                activation='relu',
+                kernel_regularizer=l2(l2_lambda),
+                name='dense_2'
+            )(x)
+            x = BatchNormalization(name='batch_norm_2')(x)
+            x = Dropout(dropout_rate, name='dropout_2')(x)
+
+            # Camada de saída
+            saida = Dense(1, activation='sigmoid', name='output')(x)
+
+            # Criar modelo
+            modelo = Model(
+                inputs=[entrada_usuario, entrada_item, entrada_conteudo],
+                outputs=saida,
+                name='modelo_recomendacao'
+            )
+            
+            # Configurar otimizador
+            optimizer = tf.keras.optimizers.Adam(
+                learning_rate=0.001,
+                clipnorm=1.0
+            )
+            
+            # Compilar modelo
+            modelo.compile(
+                optimizer=optimizer,
+                loss='binary_crossentropy',
+                metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()]
+            )
+            
+            # Mostrar sumário do modelo
+            logger.info("\nArquitetura do modelo:")
+            modelo.summary(print_fn=logger.info)
+            
+            return modelo
+                
+        except Exception as e:
+            logger.error(f"Erro ao construir modelo neural: {str(e)}")
             raise
 
-    def _preparar_dados_treino_em_lotes(self, dados_treino_pd, features_conteudo, 
+
+
+    '''def _preparar_dados_treino_em_lotes(self, dados_treino_pd, features_conteudo, 
                                     max_exemplos_total=1000000,
                                     max_exemplos_por_usuario=100,
                                     batch_size=10000):
@@ -1215,6 +1346,106 @@ class RecomendadorHibrido:
             X_item = np.array(X_item_list, dtype=np.int32)
             X_conteudo = np.array(X_conteudo_list, dtype=np.float32)
             y = np.array(y_list, dtype=np.int32)
+            
+            logger.info("\n=== ESTATÍSTICAS FINAIS ===")
+            logger.info(f"Total de exemplos: {len(y)}")
+            logger.info(f"Exemplos positivos: {np.sum(y == 1)}")
+            logger.info(f"Exemplos negativos: {np.sum(y == 0)}")
+            logger.info(f"Forma dos arrays:")
+            logger.info(f"X_usuario: {X_usuario.shape}, dtype: {X_usuario.dtype}")
+            logger.info(f"X_item: {X_item.shape}, dtype: {X_item.dtype}")
+            logger.info(f"X_conteudo: {X_conteudo.shape}, dtype: {X_conteudo.dtype}")
+            logger.info(f"y: {y.shape}, dtype: {y.dtype}")
+            
+            return X_usuario, X_item, X_conteudo, y
+            
+        except Exception as e:
+            logger.error(f"Erro ao preparar dados de treino: {str(e)}")
+            raise'''
+    
+
+    def _preparar_dados_treino_em_lotes(self, dados_treino_pd, features_conteudo, 
+                                   max_exemplos_total=1000000,
+                                   max_exemplos_por_usuario=100,
+                                   batch_size=10000):
+        """
+        Prepara os dados de treino mantendo strings para IDs de usuários.
+        """
+        logger.info("Preparando dados de treino em lotes")
+        
+        X_usuario_list = []
+        X_item_list = []
+        X_conteudo_list = []
+        y_list = []
+        
+        try:
+            # Mostrar exemplos detalhados do primeiro usuário
+            primeiro_usuario = list(self.itens_usuario.keys())[0]
+            historico_primeiro_usuario = self.itens_usuario[primeiro_usuario]
+            
+            logger.info("\n=== EXEMPLOS DETALHADOS DO PRIMEIRO USUÁRIO ===")
+            logger.info(f"ID do Usuário: {primeiro_usuario}")
+            logger.info(f"Tamanho do histórico: {len(historico_primeiro_usuario)}")
+            
+            # Lista de todos os itens disponíveis
+            todos_itens = list(self.features_item.keys())
+            
+            # Processar usuários em lotes
+            usuarios_processados = 0
+            total_usuarios = len(self.itens_usuario)
+            
+            for usuario_id, historico in self.itens_usuario.items():
+                # Verificar limite total de exemplos
+                if len(y_list) >= max_exemplos_total:
+                    logger.info(f"Atingido limite máximo de exemplos: {max_exemplos_total}")
+                    break
+                    
+                # Limitar exemplos positivos por usuário
+                n_exemplos_positivos = min(len(historico), max_exemplos_por_usuario // 2)
+                historico_amostrado = list(historico)
+                if len(historico_amostrado) > n_exemplos_positivos:
+                    historico_amostrado = np.random.choice(
+                        historico_amostrado, 
+                        n_exemplos_positivos, 
+                        replace=False
+                    )
+                
+                # Adicionar exemplos positivos
+                for item_idx in historico_amostrado:
+                    if item_idx in self.features_item:
+                        X_usuario_list.append(str(usuario_id))  # Manter como string
+                        X_item_list.append(item_idx)
+                        X_conteudo_list.append(self.features_item[item_idx]['vetor_conteudo'])
+                        y_list.append(1)
+                
+                # Adicionar exemplos negativos
+                n_exemplos_negativos = len(historico_amostrado)
+                itens_negativos = np.random.choice(
+                    [i for i in todos_itens if i not in historico],
+                    size=min(n_exemplos_negativos, max_exemplos_por_usuario // 2),
+                    replace=False
+                )
+                
+                for item_idx in itens_negativos:
+                    X_usuario_list.append(str(usuario_id))  # Manter como string
+                    X_item_list.append(item_idx)
+                    X_conteudo_list.append(self.features_item[item_idx]['vetor_conteudo'])
+                    y_list.append(0)
+                
+                # Log de progresso
+                usuarios_processados += 1
+                if usuarios_processados % 100 == 0:
+                    logger.info(f"Processados {usuarios_processados}/{total_usuarios} usuários "
+                            f"({len(y_list)} exemplos gerados)")
+            
+            # Converter para arrays numpy com tipos apropriados
+            X_usuario = np.array(X_usuario_list, dtype=object)  # Usar dtype=object para strings
+            X_item = np.array(X_item_list, dtype=np.int32)
+            X_conteudo = np.array(X_conteudo_list, dtype=np.float32)
+            y = np.array(y_list, dtype=np.int32)
+            
+            # Garantir que as strings sejam do tipo correto para o TensorFlow
+            X_usuario = tf.convert_to_tensor(X_usuario, dtype=tf.string)
             
             logger.info("\n=== ESTATÍSTICAS FINAIS ===")
             logger.info(f"Total de exemplos: {len(y)}")

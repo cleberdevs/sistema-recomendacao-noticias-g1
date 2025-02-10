@@ -61,46 +61,46 @@ def carregar_modelo():
         logger.error(f"Erro ao carregar modelo: {str(e)}")
         raise
 
-def mostrar_usuarios_disponiveis(spark, modelo):
+def mostrar_usuarios_disponiveis(spark, modelo, limite=None, pagina=1, usuarios_por_pagina=20):
     """
-    Mostra os IDs originais dos usuários disponíveis.
+    Mostra os IDs originais dos usuários disponíveis com paginação.
     """
     try:
-        # Carregar dados brutos
-        df_treino = carregar_dados_brutos(spark)
+        # Mostrar informações sobre os IDs disponíveis no modelo
+        usuarios_modelo = sorted(modelo.usuario_id_to_index.keys())
         
-        # Pegar IDs únicos
-        usuarios = df_treino.select("userId").distinct().limit(10).collect()
+        logger.info(f"\nTotal de usuários no modelo: {len(usuarios_modelo)}")
+        logger.info("\nExemplos de IDs válidos:")
+        for i, usuario_id in enumerate(usuarios_modelo[:5], 1):
+            n_historico = len(modelo.itens_usuario.get(usuario_id, []))
+            logger.info(f"{i}. ID: {usuario_id} (Itens no histórico: {n_historico})")
         
-        logger.info(f"\nTotal de usuários no modelo: {len(modelo.itens_usuario)}")
-        logger.info("\nPrimeiros 10 IDs de usuários:")
-        for i, row in enumerate(usuarios, 1):
-            usuario_id = row['userId']
-            logger.info(f"{i}. ID: {usuario_id}")
-            
-        return [row['userId'] for row in usuarios]
+        return usuarios_modelo
         
     except Exception as e:
         logger.error(f"Erro ao mostrar usuários: {str(e)}")
         raise
+
 
 def mostrar_detalhes_usuario(modelo, usuario_id):
     """
     Mostra detalhes do histórico do usuário.
     """
     try:
-        if usuario_id not in modelo.itens_usuario:
+        usuario_id = str(usuario_id)
+        if usuario_id not in modelo.usuario_id_to_index:
             logger.info(f"Usuário {usuario_id} não encontrado")
             return
             
-        historico = modelo.itens_usuario[usuario_id]
+        historico = modelo.itens_usuario.get(usuario_id, set())
         logger.info(f"\nDetalhes do usuário {usuario_id}:")
         logger.info(f"Tamanho do histórico: {len(historico)}")
         
         logger.info("\nÚltimos 5 itens do histórico:")
         for idx in list(historico)[-5:]:
-            url = modelo.index_to_item_id[idx]
-            logger.info(f"- URL: {url}")
+            if idx in modelo.index_to_item_id:
+                url = modelo.index_to_item_id[idx]
+                logger.info(f"- URL: {url}")
             
     except Exception as e:
         logger.error(f"Erro ao mostrar detalhes do usuário: {str(e)}")
@@ -112,13 +112,19 @@ def fazer_previsoes(modelo, usuario_id, n_recomendacoes=5):
     try:
         logger.info(f"Fazendo previsões para usuário {usuario_id}")
         
+        # Converter usuario_id para string para garantir consistência
+        usuario_id = str(usuario_id)
+        
         # Verificar se usuário existe no modelo
-        if usuario_id not in modelo.itens_usuario:
+        if usuario_id not in modelo.usuario_id_to_index:
             logger.warning(f"Usuário {usuario_id} não encontrado no conjunto de treino")
             return []
         
+        # Obter índice numérico do usuário
+        usuario_idx = modelo.usuario_id_to_index[usuario_id]
+        
         # Obter histórico do usuário
-        historico = modelo.itens_usuario[usuario_id]
+        historico = modelo.itens_usuario.get(usuario_id, set())
         logger.info(f"Usuário tem {len(historico)} itens no histórico")
         
         # Obter todos os itens disponíveis
@@ -127,34 +133,51 @@ def fazer_previsoes(modelo, usuario_id, n_recomendacoes=5):
         # Remover itens que o usuário já interagiu
         itens_candidatos = list(todos_itens - historico)
         
-        # Preparar dados para previsão
-        n_candidatos = len(itens_candidatos)
-        X_usuario = np.array([usuario_id] * n_candidatos)
-        X_item = np.array(itens_candidatos)
-        X_conteudo = np.array([modelo.features_item[idx]['vetor_conteudo'] 
-                              for idx in itens_candidatos])
+        # Preparar dados para previsão em lotes
+        batch_size = 1000
+        todas_previsoes = []
         
-        # Fazer previsões
-        logger.info("Realizando previsões")
-        previsoes = modelo.modelo.predict(
-            [X_usuario, X_item, X_conteudo],
-            batch_size=64,
-            verbose=0
-        )
+        for i in range(0, len(itens_candidatos), batch_size):
+            batch_candidatos = itens_candidatos[i:i + batch_size]
+            
+            # Criar arrays para o batch atual
+            X_usuario = np.full(len(batch_candidatos), usuario_idx, dtype=np.int32)
+            X_item = np.array(batch_candidatos, dtype=np.int32)
+            X_conteudo = np.array([
+                modelo.features_item[idx]['vetor_conteudo'] 
+                for idx in batch_candidatos
+            ], dtype=np.float32)
+            
+            # Fazer previsões para o batch
+            batch_previsoes = modelo.modelo.predict(
+                [X_usuario, X_item, X_conteudo],
+                batch_size=64,
+                verbose=0
+            )
+            todas_previsoes.extend(batch_previsoes.flatten())
+        
+        # Converter para array numpy
+        previsoes = np.array(todas_previsoes)
         
         # Ordenar itens por probabilidade
-        indices_ordenados = np.argsort(previsoes.flatten())[::-1][:n_recomendacoes]
+        indices_ordenados = np.argsort(previsoes)[::-1][:n_recomendacoes]
         itens_recomendados = [itens_candidatos[i] for i in indices_ordenados]
         
         # Converter índices para URLs
-        urls_recomendadas = [modelo.index_to_item_id[idx] for idx in itens_recomendados]
+        urls_recomendadas = []
+        scores = []
+        
+        for idx, prob in zip(itens_recomendados, previsoes[indices_ordenados]):
+            if idx in modelo.index_to_item_id:
+                urls_recomendadas.append(modelo.index_to_item_id[idx])
+                scores.append(prob)
         
         # Log das recomendações
         logger.info("\nRecomendações geradas:")
-        for i, (url, prob) in enumerate(zip(urls_recomendadas, previsoes[indices_ordenados]), 1):
+        for i, (url, prob) in enumerate(zip(urls_recomendadas, scores), 1):
             logger.info(f"\n{i}. Recomendação:")
             logger.info(f"   URL: {url}")
-            logger.info(f"   Probabilidade: {prob[0]:.4f}")
+            logger.info(f"   Probabilidade: {prob:.4f}")
         
         return urls_recomendadas
         
@@ -176,44 +199,52 @@ def main():
         # Carregar modelo
         modelo = carregar_modelo()
         
-        # Mostrar usuários disponíveis
-        usuarios = mostrar_usuarios_disponiveis(spark, modelo)
-        
-        # Permitir escolha do usuário
         while True:
-            try:
-                escolha = input("\nEscolha o número do usuário (1-10) ou 'q' para sair: ")
+            # Mostrar usuários disponíveis e exemplo de IDs válidos
+            usuarios_disponiveis = mostrar_usuarios_disponiveis(spark, modelo)
+            
+            print("\n=== MENU DE OPÇÕES ===")
+            print("Digite:")
+            print("- 'b' para buscar um usuário específico por ID")
+            print("- 'l' para listar mais IDs válidos")
+            print("- 'q' para sair")
+            
+            escolha = input("\nSua escolha: ").lower()
+            
+            if escolha == 'q':
+                break
+            elif escolha == 'l':
+                # Mostrar mais IDs válidos
+                print("\nIDs válidos disponíveis:")
+                for i, usuario_id in enumerate(usuarios_disponiveis[:20], 1):
+                    print(f"{i}. ID: {usuario_id}")
+                continue
+            elif escolha == 'b':
+                print("\n=== BUSCA DE USUÁRIO ===")
+                usuario_busca = input("Digite o ID do usuário: ")
                 
-                if escolha.lower() == 'q':
-                    break
+                # Verificar se o ID existe no modelo
+                if usuario_busca not in modelo.usuario_id_to_index:
+                    logger.warning(f"ID {usuario_busca} não encontrado no modelo.")
+                    logger.info("Use um dos IDs válidos mostrados acima.")
+                    continue
+                
+                logger.info(f"\n{'='*50}")
+                logger.info(f"Análise do usuário buscado:")
+                logger.info(f"ID do usuário: {usuario_busca}")
+                
+                # Mostrar detalhes do usuário
+                mostrar_detalhes_usuario(modelo, usuario_busca)
+                
+                # Fazer previsões
+                recomendacoes = fazer_previsoes(modelo, usuario_busca, n_recomendacoes=5)
+                
+                if not recomendacoes:
+                    logger.warning("Nenhuma recomendação gerada")
                     
-                idx = int(escolha) - 1
-                if 0 <= idx < len(usuarios):
-                    usuario_id = usuarios[idx]
-                    
-                    logger.info(f"\n{'='*50}")
-                    logger.info(f"Análise do usuário selecionado:")
-                    logger.info(f"ID do usuário: {usuario_id}")
-                    
-                    # Mostrar detalhes do usuário
-                    mostrar_detalhes_usuario(modelo, usuario_id)
-                    
-                    # Fazer previsões
-                    recomendacoes = fazer_previsoes(modelo, usuario_id, n_recomendacoes=5)
-                    
-                    if not recomendacoes:
-                        logger.warning("Nenhuma recomendação gerada")
-                        continue
-                        
-                    # Perguntar se quer continuar
-                    continuar = input("\nDeseja ver outro usuário? (s/n): ")
-                    if continuar.lower() != 's':
-                        break
-                else:
-                    logger.warning("Número de usuário inválido. Escolha entre 1 e 10.")
-                    
-            except ValueError:
-                logger.warning("Por favor, digite um número válido.")
+                input("\nPressione Enter para continuar...")
+            else:
+                logger.warning("Opção inválida")
                 
     except Exception as e:
         logger.error(f"Erro durante execução: {str(e)}")

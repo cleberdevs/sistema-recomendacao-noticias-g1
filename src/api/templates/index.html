@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Recomendador de Notícias</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" rel="stylesheet">
+    <style>
+        .recommendation-box {
+            border: 1px solid #ddd;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            background-color: #f8f9fa;
+        }
+        .history-item {
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #fff;
+            border: 1px solid #e9ecef;
+            border-radius: 3px;
+        }
+        .pagination {
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .pagination .page-link {
+            padding: 0.375rem 0.75rem;
+        }
+        .pagination .active .page-link {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+        }
+        .pagination .disabled .page-link {
+            color: #6c757d;
+            pointer-events: none;
+            background-color: #fff;
+            border-color: #dee2e6;
+        }
+        #results {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            background-color: #fff;
+        }
+        .btn-primary {
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-primary:hover {
+            background-color: #0b5ed7;
+            border-color: #0a58ca;
+        }
+        .btn-secondary {
+            background-color: #6c757d;
+            border-color: #6c757d;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .btn-secondary:hover {
+            background-color: #5a6268;
+            border-color: #545b62;
+        }
+        .btn-primary i, .btn-secondary i {
+            margin-right: 5px;
+        }
+        .btn-sm {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.875rem;
+        }
+        .card-title {
+            margin-bottom: 1rem;
+            color: #495057;
+        }
+        #usuario_id {
+            font-size: 1rem;
+            padding: 0.375rem 0.75rem;
+        }
+        #searchForm {
+            align-items: center;
+        }
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid transparent;
+            border-radius: 4px;
+        }
+        .alert-warning {
+            color: #856404;
+            background-color: #fff3cd;
+            border-color: #ffeeba;
+        }
+        .debug-info {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container mt-4">
+        <h1 class="text-center mb-4">Recomendador de Notícias</h1>
+        
+        <!-- Campo de recomendações -->
+        <div class="row justify-content-center mb-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Fazer Recomendações</h5>
+                        <form id="searchForm" class="d-flex gap-2">
+                            <input type="text" class="form-control" id="usuario_id" 
+                                   placeholder="Digite o ID do usuário para recomendações" required>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-chart-line"></i> Fazer Recomendações
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indicador de carregamento -->
+        <div id="loading" style="display: none;" class="text-center mt-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+            </div>
+            <p class="mt-2">Gerando recomendações...</p>
+        </div>
+
+        <!-- Área de resultados -->
+        <div id="results" style="display: none;">
+            <h4 class="mb-3">Resultados para o usuário: <span id="resultado_usuario_id"></span></h4>
+            
+            <!-- Histórico -->
+            <div class="mb-4">
+                <h5>Histórico do Usuário</h5>
+                <div id="historico"></div>
+            </div>
+
+            <!-- Recomendações -->
+            <div>
+                <h5>Recomendações</h5>
+                <div id="recomendacoes"></div>
+            </div>
+
+            <!-- Área de debug -->
+            <div id="debug-info" class="debug-info" style="display: none;"></div>
+        </div>
+
+        <!-- Lista de usuários -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h3 class="card-title">Lista de Usuários</h3>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>ID do Usuário</th>
+                                <th>Itens no Histórico</th>
+                                <th>Ação</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usuarios-lista">
+                            {% for usuario in usuarios %}
+                            <tr>
+                                <td>{{ usuario.id }}</td>
+                                <td>{{ usuario.n_historico }}</td>
+                                <td>
+                                    <button class="btn btn-sm btn-secondary usar-usuario" 
+                                            data-id="{{ usuario.id }}"
+                                            title="Transferir este ID para o campo acima">
+                                        <i class="fas fa-arrow-up"></i> Usar ID
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Paginação -->
+                <nav aria-label="Navegação de páginas">
+                    <ul class="pagination">
+                        <!-- Botão Anterior -->
+                        <li class="page-item {% if current_page == 1 %}disabled{% endif %}">
+                            <a class="page-link" href="?page={{ current_page - 1 }}" {% if current_page == 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
+                                Anterior
+                            </a>
+                        </li>
+
+                        <!-- Páginas do range -->
+                        {% for i in page_range %}
+                            <li class="page-item {% if i == current_page %}active{% endif %}">
+                                <a class="page-link" href="?page={{ i }}">{{ i }}</a>
+                            </li>
+                        {% endfor %}
+
+                        <!-- Botão Próxima -->
+                        <li class="page-item {% if current_page == total_pages %}disabled{% endif %}">
+                            <a class="page-link" href="?page={{ current_page + 1 }}" {% if current_page == total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
+                                Próxima
+                            </a>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        function fazerRecomendacoes(usuarioId) {
+            $('#results').hide();
+            $('#loading').show();
+            $('#debug-info').hide();
+            
+            console.log("Iniciando recomendações para usuário:", usuarioId);
+            
+            $.ajax({
+                url: '/buscar_usuario',
+                method: 'POST',
+                data: { usuario_id: usuarioId },
+                success: function(response) {
+                    console.log("Resposta recebida:", response);
+                    
+                    $('#loading').hide();
+                    $('#results').show();
+                    $('#resultado_usuario_id').text(usuarioId);
+                    
+                    // Mostrar histórico
+                    let historicoHtml = '';
+                    if (response.ultimos_itens && response.ultimos_itens.length > 0) {
+                        response.ultimos_itens.forEach(url => {
+                            historicoHtml += `<div class="history-item">${url}</div>`;
+                        });
+                    } else {
+                        historicoHtml = '<p>Nenhum histórico encontrado</p>';
+                    }
+                    $('#historico').html(historicoHtml);
+                    
+                    // Mostrar recomendações
+                    let recomendacoesHtml = '';
+                    if (response.recomendacoes && response.recomendacoes.length > 0) {
+                        response.recomendacoes.forEach((rec, index) => {
+                            recomendacoesHtml += `
+                                <div class="recommendation-box">
+                                    <h6>Recomendação ${index + 1}</h6>
+                                    <p>${rec}</p>
+                                </div>`;
+                        });
+                    } else {
+                        recomendacoesHtml = `
+                            <div class="alert alert-warning">
+                                Nenhuma recomendação gerada para este usuário.
+                                <br>
+                                Total de itens no histórico: ${response.n_historico}
+                            </div>`;
+                    }
+                    $('#recomendacoes').html(recomendacoesHtml);
+                    
+                    // Rolar até os resultados
+                    $('html, body').animate({
+                        scrollTop: $("#results").offset().top - 20
+                    }, 500);
+                },
+                error: function(xhr) {
+                    $('#loading').hide();
+                    console.error("Erro na requisição:", xhr);
+                    
+                    let mensagemErro = 'Erro ao fazer recomendações';
+                    if (xhr.responseJSON && xhr.responseJSON.erro) {
+                        mensagemErro += ': ' + xhr.responseJSON.erro;
+                    }
+                    
+                    $('#results').show();
+                    $('#recomendacoes').html(`
+                        <div class="alert alert-danger">
+                            ${mensagemErro}
+                        </div>
+                    `);
+                }
+            });
+        }
+
+        $(document).ready(function() {
+            // Formulário de recomendações
+            $('#searchForm').on('submit', function(e) {
+                e.preventDefault();
+                const usuarioId = $('#usuario_id').val();
+                if (!usuarioId) {
+                    alert('Por favor, digite um ID de usuário para recomendações');
+                    return;
+                }
+                fazerRecomendacoes(usuarioId);
+            });
+
+            // Botões "Usar ID" - Apenas transfere o ID para o campo
+            $('.usar-usuario').on('click', function() {
+                const usuarioId = $(this).data('id');
+                $('#usuario_id').val(usuarioId);
+                // Opcional: Dar foco ao campo
+                $('#usuario_id').focus();
+            });
+        });
+    </script>
+</body>
+</html>

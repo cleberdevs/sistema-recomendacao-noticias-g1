@@ -162,24 +162,22 @@ def fazer_previsoes(modelo, usuario_id, n_recomendacoes=5):
         # Ordenar itens por probabilidade
         indices_ordenados = np.argsort(previsoes)[::-1][:n_recomendacoes]
         itens_recomendados = [itens_candidatos[i] for i in indices_ordenados]
+        probabilidades = previsoes[indices_ordenados]
         
-        # Converter índices para URLs
-        urls_recomendadas = []
-        scores = []
-        
-        for idx, prob in zip(itens_recomendados, previsoes[indices_ordenados]):
+        # Converter índices para URLs e criar lista de recomendações
+        recomendacoes = []
+        for idx, prob in zip(itens_recomendados, probabilidades):
             if idx in modelo.index_to_item_id:
-                urls_recomendadas.append(modelo.index_to_item_id[idx])
-                scores.append(prob)
+                url = modelo.index_to_item_id[idx]
+                recomendacoes.append({
+                    'url': url,
+                    'probabilidade': float(prob)
+                })
+                logger.info(f"\n{len(recomendacoes)}. Recomendação:")
+                logger.info(f"   URL: {url}")
+                logger.info(f"   Probabilidade: {prob:.4f}")
         
-        # Log das recomendações
-        logger.info("\nRecomendações geradas:")
-        for i, (url, prob) in enumerate(zip(urls_recomendadas, scores), 1):
-            logger.info(f"\n{i}. Recomendação:")
-            logger.info(f"   URL: {url}")
-            logger.info(f"   Probabilidade: {prob:.4f}")
-        
-        return urls_recomendadas
+        return recomendacoes
         
     except Exception as e:
         logger.error(f"Erro ao fazer previsões: {str(e)}")

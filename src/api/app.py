@@ -514,7 +514,6 @@ def pagina_inicial():
 
 @app.route('/buscar_usuario', methods=['POST'])
 def buscar_usuario():
-    """Endpoint para buscar detalhes de um usuário específico e gerar recomendações."""
     try:
         usuario_id = request.form.get('usuario_id')
         if not usuario_id:
@@ -526,42 +525,20 @@ def buscar_usuario():
         # Obter histórico
         historico = modelo.itens_usuario.get(usuario_id, [])
         urls_historico = []
-        for idx in list(historico)[-5:]:  # Últimos 5 itens
+        for idx in list(historico)[-5:]:
             if idx in modelo.index_to_item_id:
                 urls_historico.append(modelo.index_to_item_id[idx])
                 
-        # Gerar recomendações usando a função do prever.py
-        try:
-            logger.info(f"Iniciando geração de recomendações para usuário {usuario_id}")
-            recomendacoes = fazer_previsoes(modelo, usuario_id, n_recomendacoes=5)
-            logger.info(f"Recomendações geradas: {recomendacoes}")
-            
-            if not recomendacoes:
-                logger.warning(f"Nenhuma recomendação gerada para usuário {usuario_id}")
-                recomendacoes = []
-        except Exception as e:
-            logger.error(f"Erro ao gerar recomendações: {str(e)}")
-            recomendacoes = []
+        # Gerar recomendações com probabilidades
+        recomendacoes = fazer_previsoes(modelo, usuario_id, n_recomendacoes=5)
         
-        # Log no MLflow
-        with mlflow.start_run(run_name=f"web_predicao_{usuario_id}"):
-            mlflow.log_params({
-                "usuario_id": usuario_id,
-                "n_historico": len(historico)
-            })
-            mlflow.log_metrics({
-                "n_recomendacoes": len(recomendacoes)
-            })
-        
-        response_data = {
+        return jsonify({
             "usuario_id": usuario_id,
             "n_historico": len(historico),
             "ultimos_itens": urls_historico,
-            "recomendacoes": recomendacoes
-        }
-        
-        logger.info(f"Enviando resposta: {response_data}")
-        return jsonify(response_data), 200
+            "recomendacoes": recomendacoes,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        }), 200
         
     except Exception as e:
         logger.error(f"Erro ao buscar usuário: {str(e)}")

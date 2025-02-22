@@ -95,53 +95,26 @@
             color: #333;
         }
         
-        .btn-primary {
-            background-color: #0056b3;
-            border-color: #0056b3;
-        }
-        
-        .btn-primary:hover {
-            background-color: #004494;
-            border-color: #004494;
-        }
-        
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(255, 255, 255, 0.8);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-        }
-        
-        .loading-content {
-            text-align: center;
-            background-color: #fff;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .error-message {
-            padding: 15px;
-            margin: 10px 0;
-            border-radius: 4px;
-            background-color: #fff3f3;
-            border: 1px solid #ffcdd2;
-            color: #d32f2f;
-        }
-        
         .timestamp {
             color: #666;
             font-size: 12px;
             margin-bottom: 15px;
         }
+        
+        .recency-info {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            margin-left: 5px;
+        }
+        
+        .recency-high { background-color: #c8e6c9; color: #2e7d32; }
+        .recency-medium { background-color: #fff3e0; color: #f57c00; }
+        .recency-low { background-color: #ffebee; color: #c62828; }
     </style>
 </head>
+
 <body>
     <div class="container mt-4">
         <h1 class="text-center mb-4">Recomendador de Notícias</h1>
@@ -271,6 +244,29 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
+        function getRecenciaInfo(data_publicacao) {
+            const data = new Date(data_publicacao);
+            const hoje = new Date();
+            const diffDias = Math.floor((hoje - data) / (1000 * 60 * 60 * 24));
+            
+            if (diffDias <= 7) {
+                return {
+                    texto: 'Última semana',
+                    classe: 'recency-high'
+                };
+            } else if (diffDias <= 30) {
+                return {
+                    texto: 'Último mês',
+                    classe: 'recency-medium'
+                };
+            } else {
+                return {
+                    texto: 'Mais antigo',
+                    classe: 'recency-low'
+                };
+            }
+        }
+
         $(document).ready(function() {
             $('#searchForm').on('submit', function(e) {
                 e.preventDefault();
@@ -328,15 +324,16 @@
                                     'Recomendação Cold Start' : 
                                     'Recomendação Personalizada';
                                 
+                                const recenciaInfo = getRecenciaInfo(rec.data_publicacao);
+                                
                                 let scoreBreakdown = '';
                                 if (rec.tipo === 'cold_start') {
                                     scoreBreakdown = `
                                         <div class="recommendation-details">
                                             <small>
                                                 <i class="fas fa-chart-line"></i> Popularidade: ${(rec.popularidade * 100).toFixed(1)}%
-                                                | <i class="far fa-clock"></i> Recência: ${(rec.recencia * 100).toFixed(1)}%
-                                                <br>
-                                                <i class="far fa-calendar-alt"></i> Data de publicação: ${rec.data_publicacao}
+                                                | <i class="far fa-clock"></i> Publicado em: ${rec.data_publicacao}
+                                                <span class="recency-info ${recenciaInfo.classe}">${recenciaInfo.texto}</span>
                                             </small>
                                         </div>
                                     `;
@@ -346,9 +343,9 @@
                                             <small>
                                                 <i class="fas fa-brain"></i> Score Modelo: ${rec.score_modelo ? (rec.score_modelo * 100).toFixed(1) : 0}%
                                                 | <i class="fas fa-chart-line"></i> Popularidade: ${(rec.popularidade * 100).toFixed(1)}%
-                                                | <i class="far fa-clock"></i> Recência: ${(rec.recencia * 100).toFixed(1)}%
                                                 <br>
-                                                <i class="far fa-calendar-alt"></i> Data de publicação: ${rec.data_publicacao}
+                                                <i class="far fa-calendar-alt"></i> Publicado em: ${rec.data_publicacao}
+                                                <span class="recency-info ${recenciaInfo.classe}">${recenciaInfo.texto}</span>
                                             </small>
                                         </div>
                                     `;
@@ -375,7 +372,7 @@
                                     Nenhuma recomendação gerada para este usuário.
                                 </div>`;
                         }
-  
+                        
                         $('#recomendacoes').html(recomendacoesHtml);
                         
                         // Rolar até os resultados
@@ -384,7 +381,7 @@
                         }, 500);
                     },
                     error: function(xhr, status, error) {
-                        console.error("Erro na requisição:", error); // Debug
+                        console.error("Erro na requisição:", error);
                         console.error("Status:", status);
                         console.error("Resposta:", xhr.responseText);
                         

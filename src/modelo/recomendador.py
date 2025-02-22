@@ -622,6 +622,44 @@ class RecomendadorHibrido:
                 int(self.item_count * 1.1)  # 10% de margem
             )
             
+            # Criar callback MLflow personalizado
+            class MLflowCallback(tf.keras.callbacks.Callback):
+                def __init__(self, mlflow_config):
+                    super().__init__()
+                    self.mlflow_config = mlflow_config
+                    self.step = 0
+
+                def on_epoch_begin(self, epoch, logs=None):
+                    logger.info(f"\nIniciando época {epoch + 1}")
+
+                def on_epoch_end(self, epoch, logs=None):
+                    # Registrar métricas da época
+                    metricas = {
+                        f"epoch_{epoch+1}_loss": logs.get("loss"),
+                        f"epoch_{epoch+1}_val_loss": logs.get("val_loss"),
+                        f"epoch_{epoch+1}_accuracy": logs.get("accuracy"),
+                        f"epoch_{epoch+1}_val_accuracy": logs.get("val_accuracy"),
+                        f"epoch_{epoch+1}_precision": logs.get("precision"),
+                        f"epoch_{epoch+1}_val_precision": logs.get("val_precision"),
+                        f"epoch_{epoch+1}_recall": logs.get("recall"),
+                        f"epoch_{epoch+1}_val_recall": logs.get("val_recall")
+                    }
+                    self.mlflow_config.log_metricas(metricas)
+                    
+                    # Log detalhado
+                    logger.info(f"Época {epoch + 1} finalizada:")
+                    for metrica, valor in logs.items():
+                        logger.info(f"{metrica}: {valor:.4f}")
+
+                def on_batch_end(self, batch, logs=None):
+                    self.step += 1
+                    if self.step % 100 == 0:  # Registrar a cada 100 batches
+                        metricas = {
+                            f"batch_{self.step}_loss": logs.get("loss"),
+                            f"batch_{self.step}_accuracy": logs.get("accuracy")
+                        }
+                        self.mlflow_config.log_metricas(metricas)
+            
             # Callbacks otimizados
             callbacks = [
                 EarlyStopping(
@@ -643,8 +681,18 @@ class RecomendadorHibrido:
                     save_best_only=True,
                     mode='min',
                     save_weights_only=False
+                ),
+                tf.keras.callbacks.TensorBoard(
+                    log_dir=f'logs/fit/{datetime.now().strftime("%Y%m%d-%H%M%S")}',
+                    histogram_freq=1,
+                    update_freq='epoch'
                 )
             ]
+
+            # Adicionar MLflow callback se houver run ativo
+            if mlflow.active_run():
+                callbacks.append(MLflowCallback(self.mlflow_config))
+                mlflow.log_param("inicio_treinamento", datetime.now().isoformat())
             
             # Treinar com parâmetros otimizados
             logger.info("Iniciando treinamento...")
@@ -665,11 +713,19 @@ class RecomendadorHibrido:
                 logger.info(f"{metrica}: {valores[-1]:.4f}")
             
             if mlflow.active_run():
+                # Registrar fim do treinamento
+                mlflow.log_param("fim_treinamento", datetime.now().isoformat())
+                
+                # Métricas finais
                 metricas = {
                     "loss_final": historia.history['loss'][-1],
                     "val_loss_final": historia.history['val_loss'][-1],
                     "accuracy_final": historia.history['accuracy'][-1],
                     "val_accuracy_final": historia.history['val_accuracy'][-1],
+                    "precision_final": historia.history['precision'][-1],
+                    "val_precision_final": historia.history['val_precision'][-1],
+                    "recall_final": historia.history['recall'][-1],
+                    "val_recall_final": historia.history['val_recall'][-1],
                     "n_exemplos_treino": len(y),
                     "n_exemplos_positivos": int(tf.reduce_sum(tf.cast(y == 1, tf.int32))),
                     "n_exemplos_negativos": int(tf.reduce_sum(tf.cast(y == 0, tf.int32))),
@@ -679,11 +735,50 @@ class RecomendadorHibrido:
                     "max_item_idx": int(max_item_idx)
                 }
                 self.mlflow_config.log_metricas(metricas)
+                
+                # Registrar modelo com mais informações
+                try:
+                    mlflow.tensorflow.log_model(
+                        self.modelo,
+                        "tensorflow-model",
+                        registered_model_name="recomendador_hibrido",
+                        input_example=[
+                            np.array([[0]], dtype=np.int32),
+                            np.array([[0]], dtype=np.int32),
+                            np.zeros((1, self.dim_features_texto), dtype=np.float32)
+                        ],
+                        metadata={
+                            "timestamp": datetime.now().isoformat(),
+                            "framework": "tensorflow",
+                            "python_version": sys.version,
+                            "dim_embedding": self.dim_embedding,
+                            "dim_features_texto": self.dim_features_texto
+                        }
+                    )
+                    logger.info("Modelo registrado no MLflow com sucesso")
+                except Exception as e:
+                    logger.error(f"Erro ao registrar modelo no MLflow: {str(e)}")
+                
+                # Salvar artefatos adicionais
+                with open("model_artifacts.pkl", "wb") as f:
+                    pickle.dump({
+                        'tfidf': self.tfidf,
+                        'item_id_to_index': self.item_id_to_index,
+                        'index_to_item_id': self.index_to_item_id,
+                        'usuario_id_to_index': self.usuario_id_to_index,
+                        'index_to_usuario_id': self.index_to_usuario_id,
+                        'item_count': self.item_count,
+                        'dim_embedding': self.dim_embedding,
+                        'dim_features_texto': self.dim_features_texto
+                    }, f)
+                mlflow.log_artifact("model_artifacts.pkl")
             
             return historia
             
         except Exception as e:
             logger.error(f"Erro durante treinamento: {str(e)}")
+            if mlflow.active_run():
+                self.mlflow_config.finalizar_run(status="FAILED")
             raise e
 
     def _preparar_dados_treino_em_lotes(self, dados_treino_pd, features_conteudo, 

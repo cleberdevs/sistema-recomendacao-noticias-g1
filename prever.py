@@ -18,22 +18,40 @@ from src.config.logging_config import configurar_logging
 configurar_logging()
 logger = logging.getLogger(__name__)
 
-def gerar_recomendacoes_cold_start(modelo, timestamps_items, k=5):
+def calcular_recencia(timestamp_item, timestamp_atual):
+    """
+    Calcula score de recência baseado na idade do item.
+    
+    Returns:
+        float: Score entre 0 e 1, onde:
+        1.0 = muito recente (hoje)
+        0.8 = última semana
+        0.6 = último mês
+        0.4 = últimos 3 meses
+        0.2 = últimos 6 meses
+        0.1 = mais antigo
+    """
+    idade_dias = (timestamp_atual - timestamp_item) / 86400  # converter para dias
+    
+    if idade_dias <= 1:  # Hoje
+        return 1.0
+    elif idade_dias <= 7:  # Última semana
+        return 0.8
+    elif idade_dias <= 30:  # Último mês
+        return 0.6
+    elif idade_dias <= 90:  # Últimos 3 meses
+        return 0.4
+    elif idade_dias <= 180:  # Últimos 6 meses
+        return 0.2
+    else:  # Mais antigo
+        return 0.1
+
+def gerar_recomendacoes_cold_start(modelo, timestamps_items, popularidade_items, k=5):
     """
     Gera recomendações para usuários novos baseado em popularidade e recência.
     """
     try:
         logger.info("Iniciando geração de recomendações cold start")
-        
-        # Calcular popularidade dos itens
-        contagem_itens = {}
-        for historico in modelo.itens_usuario.values():
-            for item in historico:
-                contagem_itens[item] = contagem_itens.get(item, 0) + 1
-        
-        # Normalizar popularidade
-        max_contagem = max(contagem_itens.values()) if contagem_itens else 1
-        min_contagem = min(contagem_itens.values()) if contagem_itens else 0
         
         # Timestamp atual para cálculo de recência
         timestamp_atual = datetime.now().timestamp()
@@ -44,16 +62,16 @@ def gerar_recomendacoes_cold_start(modelo, timestamps_items, k=5):
             if item_idx in modelo.index_to_item_id:
                 url = modelo.index_to_item_id[item_idx]
                 
-                # Calcular score de popularidade normalizado
-                popularidade = (contagem_itens.get(item_idx, 0) - min_contagem) / \
-                             (max_contagem - min_contagem) if max_contagem != min_contagem else 0.5
+                # Pular item se não tiver timestamp ou popularidade
+                if url not in timestamps_items or url not in popularidade_items:
+                    continue
                 
-                # Obter timestamp do item
-                timestamp_item = timestamps_items.get(url, datetime(2024, 1, 1).timestamp())
+                # Obter popularidade do arquivo de treino
+                popularidade = popularidade_items[url]
                 
-                # Calcular recência (mais recente = maior score)
-                idade_dias = (timestamp_atual - timestamp_item) / 86400  # converter para dias
-                recencia = 1.0 / (1.0 + idade_dias)  # normaliza entre 0 e 1
+                # Calcular recência
+                timestamp_item = timestamps_items[url]
+                recencia = calcular_recencia(timestamp_item, timestamp_atual)
                 
                 # Combinar scores (70% popularidade, 30% recência)
                 score_final = (0.7 * popularidade) + (0.3 * recencia)
@@ -76,7 +94,8 @@ def gerar_recomendacoes_cold_start(modelo, timestamps_items, k=5):
             logger.info(
                 f"Top {i}: score={rec['score']:.4f}, "
                 f"pop={rec['popularidade']:.4f}, "
-                f"rec={rec['recencia']:.4f}"
+                f"rec={rec['recencia']:.4f}, "
+                f"data={rec['data_publicacao']}"
             )
         
         return recomendacoes
@@ -85,7 +104,7 @@ def gerar_recomendacoes_cold_start(modelo, timestamps_items, k=5):
         logger.error(f"Erro ao gerar recomendações cold start: {str(e)}")
         return []
 
-def gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=5):
+def gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, popularidade_items, k=5):
     """
     Gera recomendações híbridas combinando modelo neural, popularidade e recência.
     """
@@ -125,15 +144,6 @@ def gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=5):
             )
             scores_modelo.extend(batch_scores.flatten())
         
-        # Calcular popularidade
-        contagem_itens = {}
-        for historico in modelo.itens_usuario.values():
-            for item in historico:
-                contagem_itens[item] = contagem_itens.get(item, 0) + 1
-        
-        max_contagem = max(contagem_itens.values()) if contagem_itens else 1
-        min_contagem = min(contagem_itens.values()) if contagem_itens else 0
-        
         # Timestamp atual para cálculo de recência
         timestamp_atual = datetime.now().timestamp()
         
@@ -143,17 +153,19 @@ def gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=5):
             if item_idx in modelo.index_to_item_id:
                 url = modelo.index_to_item_id[item_idx]
                 
+                # Pular item se não tiver timestamp ou popularidade
+                if url not in timestamps_items or url not in popularidade_items:
+                    continue
+                
                 # Score do modelo neural
                 score_modelo = float(scores_modelo[i])
                 
-                # Score de popularidade normalizado
-                popularidade = (contagem_itens.get(item_idx, 0) - min_contagem) / \
-                             (max_contagem - min_contagem) if max_contagem != min_contagem else 0.5
+                # Score de popularidade do arquivo de treino
+                popularidade = popularidade_items[url]
                 
                 # Score de recência
-                timestamp_item = timestamps_items.get(url, datetime(2024, 1, 1).timestamp())
-                idade_dias = (timestamp_atual - timestamp_item) / 86400
-                recencia = 1.0 / (1.0 + idade_dias)
+                timestamp_item = timestamps_items[url]
+                recencia = calcular_recencia(timestamp_item, timestamp_atual)
                 
                 # Combinar scores (60% modelo, 25% popularidade, 15% recência)
                 score_final = (0.60 * score_modelo) + \
@@ -180,7 +192,8 @@ def gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=5):
                 f"Top {i}: score={rec['score']:.4f}, "
                 f"modelo={rec['score_modelo']:.4f}, "
                 f"pop={rec['popularidade']:.4f}, "
-                f"rec={rec['recencia']:.4f}"
+                f"rec={rec['recencia']:.4f}, "
+                f"data={rec['data_publicacao']}"
             )
         
         return recomendacoes
@@ -189,7 +202,7 @@ def gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=5):
         logger.error(f"Erro ao gerar recomendações híbridas: {str(e)}")
         return []
 
-def fazer_previsoes(modelo, usuario_id, timestamps_items, n_recomendacoes=5):
+def fazer_previsoes(modelo, usuario_id, timestamps_items, popularidade_items, n_recomendacoes=5):
     """
     Faz previsões para um usuário específico, considerando cold start e modelo híbrido.
     """
@@ -201,11 +214,22 @@ def fazer_previsoes(modelo, usuario_id, timestamps_items, n_recomendacoes=5):
 
         if is_cold_start:
             logger.info(f"Usuário {usuario_id} não possui histórico - aplicando cold start")
-            return gerar_recomendacoes_cold_start(modelo, timestamps_items, k=n_recomendacoes)
+            return gerar_recomendacoes_cold_start(
+                modelo, 
+                timestamps_items,
+                popularidade_items,
+                k=n_recomendacoes
+            )
         
         # Se não é cold start, usar recomendações híbridas
         logger.info(f"Gerando recomendações híbridas para usuário existente {usuario_id}")
-        return gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=n_recomendacoes)
+        return gerar_recomendacoes_hibridas(
+            modelo, 
+            usuario_id, 
+            timestamps_items,
+            popularidade_items,
+            k=n_recomendacoes
+        )
 
     except Exception as e:
         logger.error(f"Erro ao fazer previsões: {str(e)}")
@@ -216,20 +240,59 @@ if __name__ == "__main__":
     try:
         modelo = RecomendadorHibrido.carregar_modelo('modelos/modelos_salvos/recomendador_hibrido')
         
+        # Carregar dados para teste
+        spark = SparkSession.builder \
+            .appName("TesteRecomendador") \
+            .getOrCreate()
+            
+        # Carregar timestamps e popularidade
+        caminho_itens = 'dados/processados/dados_itens_processados.parquet'
+        caminho_treino = 'dados/processados/dados_treino_processados.parquet'
+        
+        # Carregar alguns dados para teste
+        timestamps_teste = {}
+        popularidade_teste = {}
+        
         # Testar com usuário novo
         usuario_novo = "novo_usuario_1"
-        recomendacoes = fazer_previsoes(modelo, usuario_novo, timestamps_items=None, n_recomendacoes=5)
+        recomendacoes = fazer_previsoes(
+            modelo, 
+            usuario_novo, 
+            timestamps_teste,
+            popularidade_teste,
+            n_recomendacoes=5
+        )
         print(f"\nRecomendações para usuário novo ({usuario_novo}):")
         for rec in recomendacoes:
-            print(f"URL: {rec['url']}, Score: {rec['score']:.4f}")
+            print(
+                f"URL: {rec['url']}, "
+                f"Score: {rec['score']:.4f}, "
+                f"Pop: {rec['popularidade']:.4f}, "
+                f"Data: {rec['data_publicacao']}"
+            )
         
         # Testar com usuário existente
         if modelo.usuario_id_to_index:
             usuario_existente = list(modelo.usuario_id_to_index.keys())[0]
-            recomendacoes = fazer_previsoes(modelo, usuario_existente, timestamps_items=None, n_recomendacoes=5)
+            recomendacoes = fazer_previsoes(
+                modelo, 
+                usuario_existente, 
+                timestamps_teste,
+                popularidade_teste,
+                n_recomendacoes=5
+            )
             print(f"\nRecomendações para usuário existente ({usuario_existente}):")
             for rec in recomendacoes:
-                print(f"URL: {rec['url']}, Score: {rec['score']:.4f}")
+                print(
+                    f"URL: {rec['url']}, "
+                    f"Score: {rec['score']:.4f}, "
+                    f"Pop: {rec['popularidade']:.4f}, "
+                    f"Data: {rec['data_publicacao']}"
+                )
                 
     except Exception as e:
         logger.error(f"Erro nos testes: {str(e)}")
+        
+    finally:
+        if 'spark' in locals():
+            spark.stop()

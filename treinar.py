@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import sys
 import logging
@@ -7,6 +8,8 @@ import mlflow
 import shutil
 import gc
 from pathlib import Path
+
+import tensorflow as tf
 
 # Adicionar diretório raiz ao PYTHONPATH
 project_root = Path(__file__).parent
@@ -221,13 +224,24 @@ def treinar_modelo(spark):
             mlflow.end_run()
         
         with mlflow_config.iniciar_run(
-            run_name="treinamento_completo",
+            run_name=f"treinamento_{datetime.now().strftime('%Y%m%d_%H%M')}",
             tags={
                 "ambiente": os.getenv("ENVIRONMENT", "desenvolvimento"),
                 "processamento": "spark",
+                "versao_codigo": os.getenv("CODE_VERSION", "v1.0"),
+                "tipo_modelo": "hibrido",
+                "framework": "tensorflow",
                 "mlflow.user": os.getenv("USER_NAME", "sistema-recomendacao")
             }
         ):
+            # Registrar parâmetros do ambiente
+            mlflow_config.log_parametros({
+                "spark_version": spark.version,
+                "python_version": sys.version,
+                "tensorflow_version": tf.__version__,
+                "mlflow_version": mlflow.__version__
+            })
+            
             # Criar diretórios necessários
             diretorios = [
                 'modelos/modelos_salvos',
@@ -312,6 +326,58 @@ def treinar_modelo(spark):
                 logger.info("Salvando modelo treinado")
                 caminho_modelo = 'modelos/modelos_salvos/recomendador_hibrido'
                 modelo.salvar_modelo(caminho_modelo)
+                
+                # Registrar modelo no MLflow com tratamento de erro melhorado
+                try:
+                    client = mlflow.tracking.MlflowClient()
+                    
+                    # Verificar se o modelo já está registrado
+                    try:
+                        registered_model = client.get_registered_model("recomendador_hibrido")
+                        logger.info("Modelo já registrado no MLflow")
+                    except:
+                        # Se não existir, criar o modelo registrado
+                        logger.info("Criando novo modelo registrado no MLflow")
+                        registered_model = client.create_registered_model("recomendador_hibrido")
+
+                    # Registrar nova versão do modelo
+                    try:
+                        run_id = mlflow.active_run().info.run_id
+                        model_version = client.create_model_version(
+                            name="recomendador_hibrido",
+                            source=f"runs:/{run_id}/tensorflow-model",
+                            run_id=run_id
+                        )
+                        
+                        # Aguardar o registro do modelo
+                        import time
+                        for _ in range(10):  # Tentar por 10 segundos
+                            version = client.get_model_version(
+                                name="recomendador_hibrido",
+                                version=model_version.version
+                            )
+                            if version.status == "READY":
+                                break
+                            time.sleep(1)
+                        
+                        # Transicionar para produção
+                        client.transition_model_version_stage(
+                            name="recomendador_hibrido",
+                            version=model_version.version,
+                            stage="Production",
+                            archive_existing_versions=True  # Arquivar versões antigas
+                        )
+                        
+                        logger.info(f"Modelo registrado com sucesso: versão {model_version.version}")
+                        
+                    except Exception as e:
+                        logger.error(f"Erro ao criar versão do modelo: {str(e)}")
+                        raise
+                        
+                except Exception as e:
+                    logger.error(f"Erro ao registrar modelo no MLflow: {str(e)}")
+                    # Não propagar o erro para permitir que o treinamento seja considerado bem-sucedido
+                    # mesmo se o registro no MLflow falhar
                 
                 return modelo
                 

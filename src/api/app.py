@@ -7,7 +7,7 @@ from datetime import datetime
 import os
 import pandas as pd
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, to_timestamp, year
+from pyspark.sql.functions import col, to_timestamp, year, explode, count
 import gc
 from prever import fazer_previsoes, gerar_recomendacoes_cold_start, gerar_recomendacoes_hibridas
 import traceback
@@ -18,17 +18,59 @@ logger = get_logger(__name__)
 
 app = Flask(__name__)
 
-# Variável global para armazenar timestamps
+# Variáveis globais para armazenar dados
 timestamps_items = {}
+popularidade_items = {}
+
+def calcular_popularidade_items(spark, caminho_treino):
+    """
+    Calcula a popularidade dos itens usando o arquivo de treino completo.
+    """
+    try:
+        # Carregar dados de treino
+        df_treino = spark.read.parquet(caminho_treino)
+        
+        # Explodir o array de histórico para ter uma linha por interação
+        df_interacoes = df_treino.select(
+            explode('historico').alias('page')
+        )
+        
+        # Contar ocorrências de cada página
+        df_popularidade = df_interacoes.groupBy('page') \
+            .agg(count('*').alias('n_interacoes'))
+        
+        # Coletar resultados
+        contagens = {
+            row['page']: row['n_interacoes'] 
+            for row in df_popularidade.collect()
+        }
+        
+        # Normalizar
+        max_contagem = max(contagens.values())
+        min_contagem = min(contagens.values())
+        
+        popularidade_norm = {
+            url: (count - min_contagem) / (max_contagem - min_contagem)
+            for url, count in contagens.items()
+        }
+        
+        logger.info(f"Calculada popularidade para {len(popularidade_norm)} itens")
+        logger.info(f"Contagem máxima: {max_contagem}, mínima: {min_contagem}")
+        
+        return popularidade_norm
+        
+    except Exception as e:
+        logger.error(f"Erro ao calcular popularidade: {str(e)}")
+        logger.error(f"Traceback:\n{traceback.format_exc()}")
+        return {}
 
 # Carregar modelo e dados
 try:
-    # 1. Carregar o modelo treinado (não será modificado)
     logger.info("Inicializando API e carregando modelo...")
     modelo = RecomendadorHibrido.carregar_modelo('modelos/modelos_salvos/recomendador_hibrido')
     logger.info("Modelo carregado com sucesso")
 
-    # 2. Inicializar Spark com configurações adequadas
+    # Inicializar Spark com configurações adequadas
     spark = SparkSession.builder \
         .appName("RecomendadorAPI") \
         .config("spark.driver.memory", "4g") \
@@ -36,14 +78,14 @@ try:
         .config("spark.driver.maxResultSize", "2g") \
         .getOrCreate()
 
-    # 3. Carregar dados dos itens apenas para obter as datas
+    # Carregar dados dos itens para timestamps
     logger.info("Carregando dados dos itens...")
     caminho_itens = 'dados/processados/dados_itens_processados.parquet'
     
     dados_itens = spark.read.parquet(caminho_itens) \
         .select('page', 'DataPublicacao')
     
-    # 4. Processar as datas em lotes
+    # Processar as datas em lotes
     BATCH_SIZE = 1000
     total_registros = dados_itens.count()
     logger.info(f"Total de registros a processar: {total_registros}")
@@ -53,35 +95,34 @@ try:
         
         for _, row in batch.iterrows():
             try:
-                if pd.isna(row['DataPublicacao']):
-                    timestamps_items[row['page']] = datetime(2024, 1, 1).timestamp()
-                    continue
-                    
-                data = pd.to_datetime(row['DataPublicacao'])
-                if data.year < 1970 or data.year > 2030:
-                    timestamps_items[row['page']] = datetime(2024, 1, 1).timestamp()
-                else:
-                    timestamps_items[row['page']] = data.timestamp()
+                if pd.notna(row['DataPublicacao']):
+                    data = pd.to_datetime(row['DataPublicacao'])
+                    if 1970 <= data.year <= 2030:
+                        timestamps_items[row['page']] = data.timestamp()
             except:
-                timestamps_items[row['page']] = datetime(2024, 1, 1).timestamp()
+                continue
         
         if offset % (BATCH_SIZE * 10) == 0:
             logger.info(f"Processados {offset + len(batch)} de {total_registros} registros")
 
-    # 5. Log das estatísticas
+    # Calcular popularidade dos itens
+    logger.info("Calculando popularidade dos itens...")
+    caminho_treino = 'dados/processados/dados_treino_processados.parquet'
+    popularidade_items = calcular_popularidade_items(spark, caminho_treino)
+
+    # Log das estatísticas
     logger.info(f"Total de itens com timestamp: {len(timestamps_items)}")
+    logger.info(f"Total de itens com popularidade: {len(popularidade_items)}")
     
     # Verificar distribuição temporal
-    timestamps_validos = [ts for ts in timestamps_items.values() 
-                         if ts != datetime(2024, 1, 1).timestamp()]
-    if timestamps_validos:
-        data_mais_antiga = datetime.fromtimestamp(min(timestamps_validos))
-        data_mais_recente = datetime.fromtimestamp(max(timestamps_validos))
+    if timestamps_items:
+        data_mais_antiga = datetime.fromtimestamp(min(timestamps_items.values()))
+        data_mais_recente = datetime.fromtimestamp(max(timestamps_items.values()))
         logger.info(f"Período coberto: de {data_mais_antiga.date()} até {data_mais_recente.date()}")
 
     logger.info("Inicialização concluída com sucesso")
 
-    # 6. Limpar recursos do Spark
+    # Limpar recursos do Spark
     spark.stop()
     gc.collect()
 
@@ -172,8 +213,14 @@ def buscar_usuario():
         is_novo = usuario_id.startswith('novo_usuario_')
             
         try:
-            # Gerar recomendações passando o dicionário de timestamps
-            recomendacoes = fazer_previsoes(modelo, usuario_id, timestamps_items, n_recomendacoes=5)
+            # Gerar recomendações passando timestamps e popularidade
+            recomendacoes = fazer_previsoes(
+                modelo, 
+                usuario_id, 
+                timestamps_items,
+                popularidade_items,
+                n_recomendacoes=5
+            )
             
             if not recomendacoes:
                 return jsonify({
@@ -181,14 +228,6 @@ def buscar_usuario():
                 }), 404
             
             logger.info(f"Recomendações geradas: {len(recomendacoes)}")
-            
-            # Validar formato das recomendações
-            for rec in recomendacoes:
-                if 'url' not in rec or 'score' not in rec:
-                    logger.error(f"Formato inválido de recomendação: {rec}")
-                    return jsonify({
-                        "erro": "Erro no formato das recomendações"
-                    }), 500
             
             # Preparar resposta
             resposta = {
@@ -233,8 +272,14 @@ def api_previsoes():
         
         logger.info(f"API: Gerando recomendações para usuário: {id_usuario}")
         
-        # Gerar recomendações passando o dicionário de timestamps
-        recomendacoes = fazer_previsoes(modelo, id_usuario, timestamps_items, n_recomendacoes)
+        # Gerar recomendações passando timestamps e popularidade
+        recomendacoes = fazer_previsoes(
+            modelo, 
+            id_usuario, 
+            timestamps_items,
+            popularidade_items,
+            n_recomendacoes
+        )
         
         if not recomendacoes:
             return jsonify({
@@ -288,7 +333,8 @@ def verificar_saude():
                 "tipo_modelo": "híbrido",
                 "suporta_cold_start": True,
                 "componentes": ["neural", "popularidade", "recência"],
-                "itens_com_timestamp": len(timestamps_items)
+                "itens_com_timestamp": len(timestamps_items),
+                "itens_com_popularidade": len(popularidade_items)
             }
         }), 200
     except Exception as e:

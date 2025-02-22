@@ -7,6 +7,7 @@
     <style>
         body {
             background-color: #f5f5f5;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         .container {
             max-width: 1200px;
@@ -14,140 +15,133 @@
         .card {
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             border: none;
+            margin-bottom: 20px;
+            border-radius: 8px;
         }
         .card-header {
             background-color: #f8f9fa;
             border-bottom: 1px solid #eee;
+            padding: 15px 20px;
         }
         .history-item {
-            margin: 3px 0;
-            padding: 8px 12px;
+            margin: 8px 0;
+            padding: 12px 15px;
             background-color: #fff;
             border: 1px solid #e9ecef;
-            border-radius: 3px;
+            border-radius: 6px;
             font-size: 14px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
-        .pagination {
-            justify-content: center;
-            margin-top: 20px;
+        .recommendation-details {
+            margin-top: 8px;
+            font-size: 12px;
+            color: #666;
+            padding: 5px 0;
         }
-        .pagination .page-link {
-            padding: 0.375rem 0.75rem;
+        .recommendation-details small {
+            background-color: #f8f9fa;
+            padding: 6px 10px;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            display: inline-block;
+            line-height: 1.4;
         }
-        .pagination .active .page-link {
-            background-color: #0d6efd;
-            border-color: #0d6efd;
+        .recommendation-type {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-left: 8px;
         }
-        .pagination .disabled .page-link {
-            color: #6c757d;
-            pointer-events: none;
-            background-color: #fff;
-            border-color: #dee2e6;
+        .type-cold-start {
+            background-color: #ffd700;
+            color: #000;
         }
-        #results {
-            margin-top: 20px;
-            padding: 20px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-            background-color: #fff;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        .type-modelo {
+            background-color: #28a745;
+            color: #fff;
         }
+        .badge {
+            padding: 5px 10px;
+            font-size: 12px;
+            border-radius: 4px;
+        }
+        .bg-warning {
+            background-color: #ffd700 !important;
+            color: #000;
+        }
+        .bg-success {
+            background-color: #28a745 !important;
+            color: #fff;
+        }
+        .fa-brain { color: #9c27b0; }
+        .fa-chart-line { color: #2196f3; }
+        .fa-clock { color: #ff9800; }
+        .fa-calendar-alt { color: #4caf50; }
+        
+        .user-info {
+            margin-bottom: 15px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .section-title {
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+            color: #333;
+        }
+        
         .btn-primary {
-            display: inline-flex;
+            background-color: #0056b3;
+            border-color: #0056b3;
+        }
+        
+        .btn-primary:hover {
+            background-color: #004494;
+            border-color: #004494;
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
             align-items: center;
-            white-space: nowrap;
-            padding: 8px 16px;
-            background-color: #0d6efd;
-            border-color: #0d6efd;
+            z-index: 9999;
         }
-        .btn-primary i {
-            margin-right: 4px;
+        
+        .loading-content {
+            text-align: center;
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
-        .btn-secondary {
-            background-color: #6c757d;
-            border-color: #6c757d;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
+        
+        .error-message {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background-color: #fff3f3;
+            border: 1px solid #ffcdd2;
+            color: #d32f2f;
         }
-        .btn-sm {
-            padding: 4px 8px;
-            font-size: 0.875rem;
-        }
-        .card-title {
-            margin-bottom: 1rem;
-            color: #495057;
-            font-weight: 500;
-        }
-        #usuario_id {
-            font-size: 1rem;
-            padding: 0.375rem 0.75rem;
-            border: 1px solid #ced4da;
-        }
-        #searchForm {
-            align-items: center;
-        }
+        
         .timestamp {
             color: #666;
-            margin: 10px 0;
-            font-size: 13px;
-            font-style: italic;
-        }
-        .section-title {
-            font-size: 1.1rem;
-            font-weight: 500;
-            color: #333;
-            margin: 20px 0 10px 0;
-            padding-bottom: 5px;
-            border-bottom: 2px solid #e9ecef;
-        }
-        .table {
-            margin-bottom: 0;
-        }
-        .table th {
-            background-color: #f8f9fa;
-            border-bottom: 2px solid #dee2e6;
-            font-weight: 600;
-        }
-        .table td {
-            vertical-align: middle;
-        }
-        #loading {
-            background-color: rgba(255,255,255,0.8);
-            border-radius: 5px;
-            padding: 20px;
-        }
-        .spinner-border {
-            width: 2rem;
-            height: 2rem;
-        }
-        .results-header {
-            background-color: #f8f9fa;
-            padding: 10px;
-            border-radius: 5px;
+            font-size: 12px;
             margin-bottom: 15px;
-            border: 1px solid #e9ecef;
-        }
-        .results-header h4 {
-            margin: 0;
-            font-size: 1.1rem;
-            color: #495057;
-        }
-        .results-content {
-            background-color: #f8f9fa;
-            padding: 15px;
-            border-radius: 5px;
-            border: 1px solid #e9ecef;
-        }
-        .alert {
-            padding: 12px;
-            margin-bottom: 0;
-            border-radius: 3px;
         }
     </style>
 </head>
-
 <body>
     <div class="container mt-4">
         <h1 class="text-center mb-4">Recomendador de Notícias</h1>
@@ -157,12 +151,12 @@
             <div class="col-md-6">
                 <div class="card">
                     <div class="card-body">
-                        <h5 class="card-title">Fazer Recomendações</h5>
+                        <h5 class="card-title mb-3">Fazer Recomendações</h5>
                         <form id="searchForm" class="d-flex gap-2">
                             <input type="text" class="form-control" id="usuario_id" 
                                    placeholder="Digite o ID do usuário para recomendações" required>
                             <button type="submit" class="btn btn-primary d-inline-flex align-items-center">
-                                <i class="fas fa-chart-line me-1"></i>Fazer Recomendações
+                                <i class="fas fa-chart-line me-2"></i>Recomendar
                             </button>
                         </form>
                     </div>
@@ -171,30 +165,37 @@
         </div>
 
         <!-- Indicador de carregamento -->
-        <div id="loading" style="display: none;" class="text-center mt-4">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Carregando...</span>
+        <div id="loading" class="loading-overlay" style="display: none;">
+            <div class="loading-content">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Carregando...</span>
+                </div>
+                <p class="mb-0">Gerando recomendações...</p>
             </div>
-            <p class="mt-2">Gerando recomendações...</p>
         </div>
 
         <!-- Área de resultados -->
         <div id="results" style="display: none;">
-            <div class="results-header">
-                <h4>Resultados para o usuário: <span id="resultado_usuario_id"></span></h4>
-            </div>
-            
-            <div class="results-content">
-                <!-- Histórico -->
-                <div class="mb-4">
-                    <h5 class="section-title">Histórico do Usuário</h5>
-                    <div id="historico"></div>
-                </div>
+            <div class="card">
+                <div class="card-body">
+                    <div class="user-info">
+                        <h4 class="mb-0">
+                            Resultados para o usuário: <span id="resultado_usuario_id"></span>
+                            <span id="tipo_usuario" class="recommendation-type"></span>
+                        </h4>
+                    </div>
+                    
+                    <!-- Histórico (mostrado apenas para usuários existentes) -->
+                    <div id="secao_historico" class="mb-4">
+                        <h5 class="section-title">Histórico do Usuário</h5>
+                        <div id="historico"></div>
+                    </div>
 
-                <!-- Recomendações -->
-                <div>
-                    <h5 class="section-title">Recomendações</h5>
-                    <div id="recomendacoes"></div>
+                    <!-- Recomendações -->
+                    <div>
+                        <h5 class="section-title">Recomendações</h5>
+                        <div id="recomendacoes"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -202,7 +203,7 @@
         <!-- Lista de usuários -->
         <div class="card mt-4">
             <div class="card-header">
-                <h3 class="card-title">Lista de Usuários</h3>
+                <h3 class="card-title mb-0">Lista de Usuários</h3>
             </div>
             <div class="card-body">
                 <div class="table-responsive">
@@ -210,6 +211,7 @@
                         <thead>
                             <tr>
                                 <th>ID do Usuário</th>
+                                <th>Tipo</th>
                                 <th>Itens no Histórico</th>
                                 <th>Ação</th>
                             </tr>
@@ -218,11 +220,18 @@
                             {% for usuario in usuarios %}
                             <tr>
                                 <td>{{ usuario.id }}</td>
+                                <td>
+                                    {% if usuario.tipo == 'novo' %}
+                                    <span class="badge bg-warning">Novo Usuário</span>
+                                    {% else %}
+                                    <span class="badge bg-success">Existente</span>
+                                    {% endif %}
+                                </td>
                                 <td>{{ usuario.n_historico }}</td>
                                 <td>
                                     <button class="btn btn-sm btn-secondary usar-usuario" 
                                             data-id="{{ usuario.id }}"
-                                            title="Transferir este ID para o campo acima">
+                                            title="Usar este ID">
                                         <i class="fas fa-arrow-up"></i> Usar ID
                                     </button>
                                 </td>
@@ -234,9 +243,10 @@
 
                 <!-- Paginação -->
                 <nav aria-label="Navegação de páginas">
-                    <ul class="pagination">
+                    <ul class="pagination justify-content-center mb-0">
                         <li class="page-item {% if current_page == 1 %}disabled{% endif %}">
-                            <a class="page-link" href="?page={{ current_page - 1 }}" {% if current_page == 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
+                            <a class="page-link" href="?page={{ current_page - 1 }}" 
+                               {% if current_page == 1 %}tabindex="-1" aria-disabled="true"{% endif %}>
                                 Anterior
                             </a>
                         </li>
@@ -248,7 +258,8 @@
                         {% endfor %}
 
                         <li class="page-item {% if current_page == total_pages %}disabled{% endif %}">
-                            <a class="page-link" href="?page={{ current_page + 1 }}" {% if current_page == total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
+                            <a class="page-link" href="?page={{ current_page + 1 }}" 
+                               {% if current_page == total_pages %}tabindex="-1" aria-disabled="true"{% endif %}>
                                 Próxima
                             </a>
                         </li>
@@ -260,90 +271,145 @@
 
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        function fazerRecomendacoes(usuarioId) {
-            $('#results').hide();
-            $('#loading').show();
-            
-            $.ajax({
-                url: '/buscar_usuario',
-                method: 'POST',
-                data: { usuario_id: usuarioId },
-                success: function(response) {
-                    $('#loading').hide();
-                    $('#results').show();
-                    $('#resultado_usuario_id').text(usuarioId);
-                    
-                    // Mostrar histórico
-                    let historicoHtml = '';
-                    if (response.ultimos_itens && response.ultimos_itens.length > 0) {
-                        response.ultimos_itens.forEach(url => {
-                            historicoHtml += `<div class="history-item">${url}</div>`;
-                        });
-                    } else {
-                        historicoHtml = '<p>Nenhum histórico encontrado</p>';
-                    }
-                    $('#historico').html(historicoHtml);
-                    
-                    // Mostrar recomendações
-                    let recomendacoesHtml = '';
-                    if (response.recomendacoes && response.recomendacoes.length > 0) {
-                        recomendacoesHtml = `<p class="timestamp">${response.timestamp} - Recomendações geradas:</p>`;
-                        response.recomendacoes.forEach((rec, index) => {
-                            recomendacoesHtml += `
-                                <div class="history-item">
-                                    ${index + 1}. URL: ${rec.url} | Probabilidade: ${rec.probabilidade.toFixed(4)}
-                                </div>`;
-                        });
-                    } else {
-                        recomendacoesHtml = `
-                            <div class="alert alert-warning">
-                                Nenhuma recomendação gerada para este usuário.
-                                <br>
-                                Total de itens no histórico: ${response.n_historico}
-                            </div>`;
-                    }
-                    $('#recomendacoes').html(recomendacoesHtml);
-                    
-                    // Rolar até os resultados
-                    $('html, body').animate({
-                        scrollTop: $("#results").offset().top - 20
-                    }, 500);
-                },
-                error: function(xhr) {
-                    $('#loading').hide();
-                    let mensagemErro = 'Erro ao fazer recomendações';
-                    if (xhr.responseJSON && xhr.responseJSON.erro) {
-                        mensagemErro += ': ' + xhr.responseJSON.erro;
-                    }
-                    
-                    $('#results').show();
-                    $('#recomendacoes').html(`
-                        <div class="alert alert-danger">
-                            ${mensagemErro}
-                        </div>
-                    `);
-                }
-            });
-        }
-
         $(document).ready(function() {
-            // Formulário de recomendações
             $('#searchForm').on('submit', function(e) {
                 e.preventDefault();
                 const usuarioId = $('#usuario_id').val();
-                if (!usuarioId) {
-                    alert('Por favor, digite um ID de usuário para recomendações');
-                    return;
-                }
                 fazerRecomendacoes(usuarioId);
             });
 
-            // Botões "Usar ID" - Apenas transfere o ID para o campo
+            function fazerRecomendacoes(usuarioId) {
+                $('#results').hide();
+                $('#loading').show();
+                
+                $.ajax({
+                    url: '/buscar_usuario',
+                    method: 'POST',
+                    data: { usuario_id: usuarioId },
+                    success: function(response) {
+                        console.log("Resposta recebida:", response); // Debug
+                        
+                        $('#loading').hide();
+                        $('#results').show();
+                        $('#resultado_usuario_id').text(usuarioId);
+                        
+                        // Mostrar tipo de usuário
+                        const tipoSpan = $('#tipo_usuario');
+                        const isNovo = response.tipo_usuario === "novo";
+                        
+                        if (isNovo) {
+                            tipoSpan.text("Usuário Novo (Cold Start)");
+                            tipoSpan.removeClass('type-modelo').addClass('type-cold-start');
+                            $('#secao_historico').hide();
+                        } else {
+                            tipoSpan.text("Usuário Existente");
+                            tipoSpan.removeClass('type-cold-start').addClass('type-modelo');
+                            $('#secao_historico').show();
+                        }
+                        
+                        // Mostrar histórico para usuários existentes
+                        if (!isNovo && response.ultimos_itens) {
+                            let historicoHtml = '';
+                            response.ultimos_itens.forEach(url => {
+                                historicoHtml += `<div class="history-item">${url}</div>`;
+                            });
+                            $('#historico').html(historicoHtml);
+                        }
+                        
+                        // Mostrar recomendações
+                        let recomendacoesHtml = `
+                            <p class="timestamp">${response.timestamp} - Recomendações geradas:</p>
+                        `;
+                        
+                        if (response.recomendacoes && response.recomendacoes.length > 0) {
+                            response.recomendacoes.forEach((rec, index) => {
+                                const tipoClass = rec.tipo === 'cold_start' ? 'type-cold-start' : 'type-modelo';
+                                const tipoText = rec.tipo === 'cold_start' ? 
+                                    'Recomendação Cold Start' : 
+                                    'Recomendação Personalizada';
+                                
+                                let scoreBreakdown = '';
+                                if (rec.tipo === 'cold_start') {
+                                    scoreBreakdown = `
+                                        <div class="recommendation-details">
+                                            <small>
+                                                <i class="fas fa-chart-line"></i> Popularidade: ${(rec.popularidade * 100).toFixed(1)}%
+                                                | <i class="far fa-clock"></i> Recência: ${(rec.recencia * 100).toFixed(1)}%
+                                                <br>
+                                                <i class="far fa-calendar-alt"></i> Data de publicação: ${rec.data_publicacao}
+                                            </small>
+                                        </div>
+                                    `;
+                                } else {
+                                    scoreBreakdown = `
+                                        <div class="recommendation-details">
+                                            <small>
+                                                <i class="fas fa-brain"></i> Score Modelo: ${rec.score_modelo ? (rec.score_modelo * 100).toFixed(1) : 0}%
+                                                | <i class="fas fa-chart-line"></i> Popularidade: ${(rec.popularidade * 100).toFixed(1)}%
+                                                | <i class="far fa-clock"></i> Recência: ${(rec.recencia * 100).toFixed(1)}%
+                                                <br>
+                                                <i class="far fa-calendar-alt"></i> Data de publicação: ${rec.data_publicacao}
+                                            </small>
+                                        </div>
+                                    `;
+                                }
+                                
+                                recomendacoesHtml += `
+                                    <div class="history-item">
+                                        ${index + 1}. URL: ${rec.url}
+                                        <span class="recommendation-type ${tipoClass}">
+                                            ${tipoText}
+                                        </span>
+                                        <div class="recommendation-info">
+                                            Score Final: ${rec.score.toFixed(4)}
+                                            ${rec.tipo === 'cold_start' ? 
+                                                '(70% popularidade + 30% recência)' : 
+                                                '(60% modelo + 25% popularidade + 15% recência)'}
+                                        </div>
+                                        ${scoreBreakdown}
+                                    </div>`;
+                            });
+                        } else {
+                            recomendacoesHtml += `
+                                <div class="alert alert-warning">
+                                    Nenhuma recomendação gerada para este usuário.
+                                </div>`;
+                        }
+  
+                        $('#recomendacoes').html(recomendacoesHtml);
+                        
+                        // Rolar até os resultados
+                        $('html, body').animate({
+                            scrollTop: $("#results").offset().top - 20
+                        }, 500);
+                    },
+                    error: function(xhr, status, error) {
+                        console.error("Erro na requisição:", error); // Debug
+                        console.error("Status:", status);
+                        console.error("Resposta:", xhr.responseText);
+                        
+                        $('#loading').hide();
+                        let mensagemErro = 'Erro ao fazer recomendações';
+                        if (xhr.responseJSON && xhr.responseJSON.erro) {
+                            mensagemErro += ': ' + xhr.responseJSON.erro;
+                        }
+                        
+                        $('#results').show();
+                        $('#recomendacoes').html(`
+                            <div class="error-message">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                ${mensagemErro}
+                            </div>
+                        `);
+                    }
+                });
+            }
+
+            // Botões "Usar ID"
             $('.usar-usuario').on('click', function() {
                 const usuarioId = $(this).data('id');
                 $('#usuario_id').val(usuarioId);
-                // Opcional: Dar foco ao campo
-                $('#usuario_id').focus();
+                $('#searchForm').submit();
             });
         });
     </script>

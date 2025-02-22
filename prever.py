@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 import numpy as np
 import pandas as pd
+from datetime import datetime
 from pyspark.sql import SparkSession
 
 # Adicionar diretório raiz ao PYTHONPATH
@@ -11,246 +12,224 @@ project_root = Path(__file__).parent
 sys.path.append(str(project_root))
 
 from src.modelo.recomendador import RecomendadorHibrido
-from src.modelo.preprocessamento_spark import PreProcessadorDadosSpark
 from src.config.logging_config import configurar_logging
-from src.config.spark_config import configurar_ambiente_spark
 
 # Configurar logging
 configurar_logging()
 logger = logging.getLogger(__name__)
 
-def carregar_dados_brutos(spark):
+def gerar_recomendacoes_cold_start(modelo, timestamps_items, k=5):
     """
-    Carrega os dados brutos para obter IDs originais.
-    
-    Returns:
-        DataFrame: Dados de treino brutos
+    Gera recomendações para usuários novos baseado em popularidade e recência.
     """
     try:
-        preprocessador = PreProcessadorDadosSpark(spark)
+        logger.info("Iniciando geração de recomendações cold start")
         
-        # Carregar arquivo de treino
-        arquivos_treino = [f for f in os.listdir('dados/brutos') 
-                          if f.startswith('treino_parte') and f.endswith('.csv')]
+        # Calcular popularidade dos itens
+        contagem_itens = {}
+        for historico in modelo.itens_usuario.values():
+            for item in historico:
+                contagem_itens[item] = contagem_itens.get(item, 0) + 1
         
-        caminho_treino = [os.path.join('dados/brutos', f) for f in arquivos_treino]
+        # Normalizar popularidade
+        max_contagem = max(contagem_itens.values()) if contagem_itens else 1
+        min_contagem = min(contagem_itens.values()) if contagem_itens else 0
         
-        # Ler dados brutos
-        df_treino = spark.read.csv(
-            caminho_treino,
-            header=True
-        )
+        # Timestamp atual para cálculo de recência
+        timestamp_atual = datetime.now().timestamp()
         
-        return df_treino
-        
-    except Exception as e:
-        logger.error(f"Erro ao carregar dados brutos: {str(e)}")
-        raise
-
-def carregar_modelo():
-    """
-    Carrega o modelo treinado.
-    """
-    try:
-        caminho_modelo = 'modelos/modelos_salvos/recomendador_hibrido'
-        logger.info(f"Carregando modelo de {caminho_modelo}")
-        modelo = RecomendadorHibrido.carregar_modelo(caminho_modelo)
-        logger.info("Modelo carregado com sucesso")
-        return modelo
-    except Exception as e:
-        logger.error(f"Erro ao carregar modelo: {str(e)}")
-        raise
-
-def mostrar_usuarios_disponiveis(spark, modelo, limite=None, pagina=1, usuarios_por_pagina=20):
-    """
-    Mostra os IDs originais dos usuários disponíveis com paginação.
-    """
-    try:
-        # Mostrar informações sobre os IDs disponíveis no modelo
-        usuarios_modelo = sorted(modelo.usuario_id_to_index.keys())
-        
-        logger.info(f"\nTotal de usuários no modelo: {len(usuarios_modelo)}")
-        logger.info("\nExemplos de IDs válidos:")
-        for i, usuario_id in enumerate(usuarios_modelo[:5], 1):
-            n_historico = len(modelo.itens_usuario.get(usuario_id, []))
-            logger.info(f"{i}. ID: {usuario_id} (Itens no histórico: {n_historico})")
-        
-        return usuarios_modelo
-        
-    except Exception as e:
-        logger.error(f"Erro ao mostrar usuários: {str(e)}")
-        raise
-
-
-def mostrar_detalhes_usuario(modelo, usuario_id):
-    """
-    Mostra detalhes do histórico do usuário.
-    """
-    try:
-        usuario_id = str(usuario_id)
-        if usuario_id not in modelo.usuario_id_to_index:
-            logger.info(f"Usuário {usuario_id} não encontrado")
-            return
-            
-        historico = modelo.itens_usuario.get(usuario_id, set())
-        logger.info(f"\nDetalhes do usuário {usuario_id}:")
-        logger.info(f"Tamanho do histórico: {len(historico)}")
-        
-        logger.info("\nÚltimos 5 itens do histórico:")
-        for idx in list(historico)[-5:]:
-            if idx in modelo.index_to_item_id:
-                url = modelo.index_to_item_id[idx]
-                logger.info(f"- URL: {url}")
-            
-    except Exception as e:
-        logger.error(f"Erro ao mostrar detalhes do usuário: {str(e)}")
-
-def fazer_previsoes(modelo, usuario_id, n_recomendacoes=5):
-    """
-    Faz previsões para um usuário específico.
-    """
-    try:
-        logger.info(f"Fazendo previsões para usuário {usuario_id}")
-        
-        # Converter usuario_id para string para garantir consistência
-        usuario_id = str(usuario_id)
-        
-        # Verificar se usuário existe no modelo
-        if usuario_id not in modelo.usuario_id_to_index:
-            logger.warning(f"Usuário {usuario_id} não encontrado no conjunto de treino")
-            return []
-        
-        # Obter índice numérico do usuário
-        usuario_idx = modelo.usuario_id_to_index[usuario_id]
-        
-        # Obter histórico do usuário
-        historico = modelo.itens_usuario.get(usuario_id, set())
-        logger.info(f"Usuário tem {len(historico)} itens no histórico")
-        
-        # Obter todos os itens disponíveis
-        todos_itens = set(modelo.features_item.keys())
-        
-        # Remover itens que o usuário já interagiu
-        itens_candidatos = list(todos_itens - historico)
-        
-        # Preparar dados para previsão em lotes
-        batch_size = 1000
-        todas_previsoes = []
-        
-        for i in range(0, len(itens_candidatos), batch_size):
-            batch_candidatos = itens_candidatos[i:i + batch_size]
-            
-            # Criar arrays para o batch atual
-            X_usuario = np.full(len(batch_candidatos), usuario_idx, dtype=np.int32)
-            X_item = np.array(batch_candidatos, dtype=np.int32)
-            X_conteudo = np.array([
-                modelo.features_item[idx]['vetor_conteudo'] 
-                for idx in batch_candidatos
-            ], dtype=np.float32)
-            
-            # Fazer previsões para o batch
-            batch_previsoes = modelo.modelo.predict(
-                [X_usuario, X_item, X_conteudo],
-                batch_size=64,
-                verbose=0
-            )
-            todas_previsoes.extend(batch_previsoes.flatten())
-        
-        # Converter para array numpy
-        previsoes = np.array(todas_previsoes)
-        
-        # Ordenar itens por probabilidade
-        indices_ordenados = np.argsort(previsoes)[::-1][:n_recomendacoes]
-        itens_recomendados = [itens_candidatos[i] for i in indices_ordenados]
-        probabilidades = previsoes[indices_ordenados]
-        
-        # Converter índices para URLs e criar lista de recomendações
-        recomendacoes = []
-        for idx, prob in zip(itens_recomendados, probabilidades):
-            if idx in modelo.index_to_item_id:
-                url = modelo.index_to_item_id[idx]
-                recomendacoes.append({
+        # Calcular scores combinados para cada item
+        items_scores = []
+        for item_idx in modelo.features_item.keys():
+            if item_idx in modelo.index_to_item_id:
+                url = modelo.index_to_item_id[item_idx]
+                
+                # Calcular score de popularidade normalizado
+                popularidade = (contagem_itens.get(item_idx, 0) - min_contagem) / \
+                             (max_contagem - min_contagem) if max_contagem != min_contagem else 0.5
+                
+                # Obter timestamp do item
+                timestamp_item = timestamps_items.get(url, datetime(2024, 1, 1).timestamp())
+                
+                # Calcular recência (mais recente = maior score)
+                idade_dias = (timestamp_atual - timestamp_item) / 86400  # converter para dias
+                recencia = 1.0 / (1.0 + idade_dias)  # normaliza entre 0 e 1
+                
+                # Combinar scores (70% popularidade, 30% recência)
+                score_final = (0.7 * popularidade) + (0.3 * recencia)
+                
+                items_scores.append({
                     'url': url,
-                    'probabilidade': float(prob)
+                    'score': float(score_final),
+                    'popularidade': float(popularidade),
+                    'recencia': float(recencia),
+                    'data_publicacao': datetime.fromtimestamp(timestamp_item).strftime('%Y-%m-%d'),
+                    'tipo': 'cold_start'
                 })
-                logger.info(f"\n{len(recomendacoes)}. Recomendação:")
-                logger.info(f"   URL: {url}")
-                logger.info(f"   Probabilidade: {prob:.4f}")
+        
+        # Ordenar por score e selecionar top-k
+        items_scores.sort(key=lambda x: x['score'], reverse=True)
+        recomendacoes = items_scores[:k]
+        
+        logger.info(f"Geradas {len(recomendacoes)} recomendações cold start")
+        for i, rec in enumerate(recomendacoes[:3], 1):
+            logger.info(
+                f"Top {i}: score={rec['score']:.4f}, "
+                f"pop={rec['popularidade']:.4f}, "
+                f"rec={rec['recencia']:.4f}"
+            )
         
         return recomendacoes
         
     except Exception as e:
-        logger.error(f"Erro ao fazer previsões: {str(e)}")
-        raise
+        logger.error(f"Erro ao gerar recomendações cold start: {str(e)}")
+        return []
 
-def main():
+def gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=5):
     """
-    Função principal para testar previsões.
+    Gera recomendações híbridas combinando modelo neural, popularidade e recência.
     """
-    spark = None
     try:
-        # Configurar Spark
-        spark = SparkSession.builder \
-            .appName("PrevisaoRecomendador") \
-            .getOrCreate()
-            
-        # Carregar modelo
-        modelo = carregar_modelo()
+        logger.info(f"Gerando recomendações híbridas para usuário {usuario_id}")
         
-        while True:
-            # Mostrar usuários disponíveis e exemplo de IDs válidos
-            usuarios_disponiveis = mostrar_usuarios_disponiveis(spark, modelo)
-            
-            print("\n=== MENU DE OPÇÕES ===")
-            print("Digite:")
-            print("- 'b' para buscar um usuário específico por ID")
-            print("- 'l' para listar mais IDs válidos")
-            print("- 'q' para sair")
-            
-            escolha = input("\nSua escolha: ").lower()
-            
-            if escolha == 'q':
-                break
-            elif escolha == 'l':
-                # Mostrar mais IDs válidos
-                print("\nIDs válidos disponíveis:")
-                for i, usuario_id in enumerate(usuarios_disponiveis[:20], 1):
-                    print(f"{i}. ID: {usuario_id}")
-                continue
-            elif escolha == 'b':
-                print("\n=== BUSCA DE USUÁRIO ===")
-                usuario_busca = input("Digite o ID do usuário: ")
+        # Preparar dados para o modelo
+        usuario_idx = modelo.usuario_id_to_index[usuario_id]
+        historico = modelo.itens_usuario.get(usuario_id, set())
+        candidatos = [idx for idx in modelo.features_item.keys() if idx not in historico]
+        
+        if not candidatos:
+            logger.warning("Nenhum item candidato disponível")
+            return []
+        
+        # Calcular scores do modelo neural
+        X_usuario = np.array([usuario_idx] * len(candidatos))
+        X_item = np.array(candidatos)
+        X_conteudo = np.array([
+            modelo.features_item[idx]['vetor_conteudo'] 
+            for idx in candidatos
+        ])
+        
+        # Fazer previsões em lotes
+        batch_size = 1000
+        scores_modelo = []
+        
+        for i in range(0, len(candidatos), batch_size):
+            batch_end = min(i + batch_size, len(candidatos))
+            batch_scores = modelo.modelo.predict(
+                [
+                    X_usuario[i:batch_end],
+                    X_item[i:batch_end],
+                    X_conteudo[i:batch_end]
+                ],
+                verbose=0
+            )
+            scores_modelo.extend(batch_scores.flatten())
+        
+        # Calcular popularidade
+        contagem_itens = {}
+        for historico in modelo.itens_usuario.values():
+            for item in historico:
+                contagem_itens[item] = contagem_itens.get(item, 0) + 1
+        
+        max_contagem = max(contagem_itens.values()) if contagem_itens else 1
+        min_contagem = min(contagem_itens.values()) if contagem_itens else 0
+        
+        # Timestamp atual para cálculo de recência
+        timestamp_atual = datetime.now().timestamp()
+        
+        # Combinar scores para cada item candidato
+        recomendacoes = []
+        for i, item_idx in enumerate(candidatos):
+            if item_idx in modelo.index_to_item_id:
+                url = modelo.index_to_item_id[item_idx]
                 
-                # Verificar se o ID existe no modelo
-                if usuario_busca not in modelo.usuario_id_to_index:
-                    logger.warning(f"ID {usuario_busca} não encontrado no modelo.")
-                    logger.info("Use um dos IDs válidos mostrados acima.")
-                    continue
+                # Score do modelo neural
+                score_modelo = float(scores_modelo[i])
                 
-                logger.info(f"\n{'='*50}")
-                logger.info(f"Análise do usuário buscado:")
-                logger.info(f"ID do usuário: {usuario_busca}")
+                # Score de popularidade normalizado
+                popularidade = (contagem_itens.get(item_idx, 0) - min_contagem) / \
+                             (max_contagem - min_contagem) if max_contagem != min_contagem else 0.5
                 
-                # Mostrar detalhes do usuário
-                mostrar_detalhes_usuario(modelo, usuario_busca)
+                # Score de recência
+                timestamp_item = timestamps_items.get(url, datetime(2024, 1, 1).timestamp())
+                idade_dias = (timestamp_atual - timestamp_item) / 86400
+                recencia = 1.0 / (1.0 + idade_dias)
                 
-                # Fazer previsões
-                recomendacoes = fazer_previsoes(modelo, usuario_busca, n_recomendacoes=5)
+                # Combinar scores (60% modelo, 25% popularidade, 15% recência)
+                score_final = (0.60 * score_modelo) + \
+                            (0.25 * popularidade) + \
+                            (0.15 * recencia)
                 
-                if not recomendacoes:
-                    logger.warning("Nenhuma recomendação gerada")
-                    
-                input("\nPressione Enter para continuar...")
-            else:
-                logger.warning("Opção inválida")
-                
+                recomendacoes.append({
+                    'url': url,
+                    'score': float(score_final),
+                    'score_modelo': score_modelo,
+                    'popularidade': float(popularidade),
+                    'recencia': float(recencia),
+                    'data_publicacao': datetime.fromtimestamp(timestamp_item).strftime('%Y-%m-%d'),
+                    'tipo': 'modelo'
+                })
+        
+        # Ordenar por score final e retornar top-k
+        recomendacoes.sort(key=lambda x: x['score'], reverse=True)
+        recomendacoes = recomendacoes[:k]
+        
+        logger.info(f"Geradas {len(recomendacoes)} recomendações híbridas")
+        for i, rec in enumerate(recomendacoes[:3], 1):
+            logger.info(
+                f"Top {i}: score={rec['score']:.4f}, "
+                f"modelo={rec['score_modelo']:.4f}, "
+                f"pop={rec['popularidade']:.4f}, "
+                f"rec={rec['recencia']:.4f}"
+            )
+        
+        return recomendacoes
+        
     except Exception as e:
-        logger.error(f"Erro durante execução: {str(e)}")
-        raise
-    finally:
-        logger.info("\nTeste de previsões concluído")
-        if spark:
-            spark.stop()
+        logger.error(f"Erro ao gerar recomendações híbridas: {str(e)}")
+        return []
+
+def fazer_previsoes(modelo, usuario_id, timestamps_items, n_recomendacoes=5):
+    """
+    Faz previsões para um usuário específico, considerando cold start e modelo híbrido.
+    """
+    try:
+        logger.info(f"Fazendo previsões para usuário {usuario_id}")
+        
+        # Verificar se é um caso de cold start
+        is_cold_start = usuario_id.startswith('novo_usuario_')
+
+        if is_cold_start:
+            logger.info(f"Usuário {usuario_id} não possui histórico - aplicando cold start")
+            return gerar_recomendacoes_cold_start(modelo, timestamps_items, k=n_recomendacoes)
+        
+        # Se não é cold start, usar recomendações híbridas
+        logger.info(f"Gerando recomendações híbridas para usuário existente {usuario_id}")
+        return gerar_recomendacoes_hibridas(modelo, usuario_id, timestamps_items, k=n_recomendacoes)
+
+    except Exception as e:
+        logger.error(f"Erro ao fazer previsões: {str(e)}")
+        return []
 
 if __name__ == "__main__":
-    main()
+    # Código para testes diretos do script
+    try:
+        modelo = RecomendadorHibrido.carregar_modelo('modelos/modelos_salvos/recomendador_hibrido')
+        
+        # Testar com usuário novo
+        usuario_novo = "novo_usuario_1"
+        recomendacoes = fazer_previsoes(modelo, usuario_novo, timestamps_items=None, n_recomendacoes=5)
+        print(f"\nRecomendações para usuário novo ({usuario_novo}):")
+        for rec in recomendacoes:
+            print(f"URL: {rec['url']}, Score: {rec['score']:.4f}")
+        
+        # Testar com usuário existente
+        if modelo.usuario_id_to_index:
+            usuario_existente = list(modelo.usuario_id_to_index.keys())[0]
+            recomendacoes = fazer_previsoes(modelo, usuario_existente, timestamps_items=None, n_recomendacoes=5)
+            print(f"\nRecomendações para usuário existente ({usuario_existente}):")
+            for rec in recomendacoes:
+                print(f"URL: {rec['url']}, Score: {rec['score']:.4f}")
+                
+    except Exception as e:
+        logger.error(f"Erro nos testes: {str(e)}")

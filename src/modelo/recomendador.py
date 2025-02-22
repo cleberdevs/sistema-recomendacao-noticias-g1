@@ -593,7 +593,7 @@ class RecomendadorHibrido:
             X_usuario, X_item, X_conteudo, y = self._preparar_dados_treino_em_lotes(
                 dados_treino_pd, 
                 features_conteudo,
-                max_exemplos_total=500000,  # Reduzido
+                max_exemplos_total=2000000,  # Reduzido
                 max_exemplos_por_usuario=50,  # Reduzido
                 caminho_checkpoints="dados/checkpoints"
             )
@@ -653,7 +653,7 @@ class RecomendadorHibrido:
                 y,
                 validation_split=0.2,
                 epochs=5,  # Reduzido
-                batch_size=512,  # Aumentado
+                batch_size=1024,  # Aumentado
                 callbacks=callbacks,
                 shuffle=True,
                 verbose=1
@@ -687,7 +687,7 @@ class RecomendadorHibrido:
             raise e
 
     def _preparar_dados_treino_em_lotes(self, dados_treino_pd, features_conteudo, 
-                                       max_exemplos_total=500000,
+                                       max_exemplos_total=2000000,
                                        max_exemplos_por_usuario=50,
                                        batch_size=1000,
                                        caminho_checkpoints="dados/checkpoints"):
@@ -818,31 +818,123 @@ class RecomendadorHibrido:
             logger.error(f"Erro ao preparar dados de treino: {str(e)}")
             raise
 
+
+    def _prever_cold_start(self, k=10):
+        """
+        Gera recomendações para usuários novos (cold start) com:
+        - 70% baseado em popularidade
+        - 30% baseado em recência
+        """
+        try:
+            # Calcular popularidade e recência dos itens
+            contagem_itens = {}
+            recencia_itens = {}
+            
+            # Inicializar com timestamp padrão para itens sem data
+            timestamp_padrao = datetime(2024, 1, 1).timestamp()
+            
+            # Calcular contagens e coletar timestamps
+            for item_idx in self.features_item.keys():
+                # Contagem de aparições nos históricos
+                contagem = 0
+                for historico in self.itens_usuario.values():
+                    if item_idx in historico:
+                        contagem += 1
+                contagem_itens[item_idx] = contagem
+                
+                # Recência do item (timestamp)
+                timestamp = self.features_item[item_idx].get('timestamp', timestamp_padrao)
+                if not timestamp or timestamp < 0:
+                    timestamp = timestamp_padrao
+                recencia_itens[item_idx] = timestamp
+            
+            # Normalizar contagens (popularidade)
+            max_contagem = max(contagem_itens.values()) if contagem_itens else 1
+            min_contagem = min(contagem_itens.values()) if contagem_itens else 0
+            
+            scores_popularidade = {
+                item: (count - min_contagem)/(max_contagem - min_contagem) 
+                if max_contagem != min_contagem else 0.5
+                for item, count in contagem_itens.items()
+            }
+            
+            # Normalizar recência
+            timestamps = list(recencia_itens.values())
+            max_timestamp = max(timestamps)
+            min_timestamp = min(timestamps)
+            timestamp_range = max_timestamp - min_timestamp if max_timestamp != min_timestamp else 1
+            
+            scores_recencia = {
+                item: (timestamp - min_timestamp)/timestamp_range 
+                if timestamp_range > 0 else 0.5
+                for item, timestamp in recencia_itens.items()
+            }
+            
+            # Calcular scores combinados (70% popularidade, 30% recência)
+            items_scores = []
+            for item_idx in self.features_item.keys():
+                if item_idx in self.index_to_item_id:
+                    score_popularidade = scores_popularidade.get(item_idx, 0)
+                    score_recencia = scores_recencia.get(item_idx, 0)
+                    
+                    score_final = (0.7 * score_popularidade) + (0.3 * score_recencia)
+                    
+                    # Converter timestamp para data legível
+                    data_item = datetime.fromtimestamp(recencia_itens[item_idx])
+                    
+                    items_scores.append({
+                        'item_id': self.index_to_item_id[item_idx],
+                        'score': float(score_final),
+                        'popularidade': float(score_popularidade),
+                        'recencia': float(score_recencia),
+                        'data_publicacao': data_item.strftime('%Y-%m-%d'),
+                        'tipo': 'cold_start'
+                    })
+            
+            # Ordenar por score final e selecionar top-k
+            items_scores.sort(key=lambda x: x['score'], reverse=True)
+            return items_scores[:k]
+
+        except Exception as e:
+            logger.error(f"Erro ao gerar recomendações cold start: {str(e)}")
+            return []
+
+
     def prever(self, usuario_id, candidatos=None, k=10):
         """
-        Faz previsões para um usuário.
+        Faz previsões combinando modelo neural com popularidade e recência.
+        Pesos para usuários existentes:
+        - 60% modelo neural
+        - 25% popularidade
+        - 15% recência
         """
         if not self.modelo:
             raise ValueError("Modelo não treinado")
-        
+
         try:
             usuario_id = str(usuario_id)
-            if usuario_id not in self.usuario_id_to_index:
-                logger.warning(f"Usuário {usuario_id} não encontrado no conjunto de treino")
-                return []
             
+            # Verificar se é um caso de cold start (usuário sem histórico)
+            is_cold_start = usuario_id not in self.itens_usuario or \
+                        not self.itens_usuario.get(usuario_id)
+
+            if is_cold_start:
+                logger.info(f"Usuário {usuario_id} não possui histórico - aplicando cold start")
+                return self._prever_cold_start(k=k)
+
+            # Preparar candidatos
             if not candidatos:
                 candidatos = list(self.features_item.keys())
-            
+
+            # Calcular scores do modelo neural
             usuario_idx = self.usuario_id_to_index[usuario_id]
             X_usuario = np.array([usuario_idx] * len(candidatos))
             X_item = np.array(candidatos)
             X_conteudo = np.array([self.features_item[idx]['vetor_conteudo'] for idx in candidatos])
-            
-            # Fazer previsões em lotes para economizar memória
+
+            scores_modelo = []
             batch_size = 1000
-            previsoes = []
-            
+
             for i in range(0, len(candidatos), batch_size):
                 batch_end = min(i + batch_size, len(candidatos))
                 batch_previsoes = self.modelo.predict(
@@ -853,23 +945,67 @@ class RecomendadorHibrido:
                     ],
                     verbose=0
                 )
-                previsoes.extend(batch_previsoes.flatten())
-            
-            # Ordenar e retornar os top-k itens
-            previsoes = np.array(previsoes)
-            indices_ordenados = np.argsort(previsoes)[::-1][:k]
-            
+                scores_modelo.extend(batch_previsoes.flatten())
+
+            # Calcular popularidade
+            contagem_itens = {}
+            for historico in self.itens_usuario.values():
+                for item in historico:
+                    contagem_itens[item] = contagem_itens.get(item, 0) + 1
+
+            max_contagem = max(contagem_itens.values()) if contagem_itens else 1
+            min_contagem = min(contagem_itens.values()) if contagem_itens else 0
+
+            # Calcular recência
+            timestamp_padrao = datetime(2024, 1, 1).timestamp()
+            timestamps = [
+                self.features_item[idx].get('timestamp', timestamp_padrao)
+                for idx in candidatos
+            ]
+            max_timestamp = max(timestamps)
+            min_timestamp = min(timestamps)
+            timestamp_range = max_timestamp - min_timestamp if max_timestamp != min_timestamp else 1
+
+            # Combinar scores
             recomendacoes = []
-            for idx in indices_ordenados:
-                item_id = self.index_to_item_id[candidatos[idx]]
-                score = float(previsoes[idx])
+            for i, item_idx in enumerate(candidatos):
+                # Score do modelo neural
+                score_modelo = float(scores_modelo[i])
+                
+                # Score de popularidade
+                contagem = contagem_itens.get(item_idx, 0)
+                score_popularidade = (contagem - min_contagem)/(max_contagem - min_contagem) \
+                                if max_contagem != min_contagem else 0.5
+                
+                # Score de recência
+                timestamp = self.features_item[item_idx].get('timestamp', timestamp_padrao)
+                if not timestamp or timestamp < 0:
+                    timestamp = timestamp_padrao
+                score_recencia = (timestamp - min_timestamp)/timestamp_range \
+                            if timestamp_range > 0 else 0.5
+
+                # Combinar scores com pesos
+                score_final = (0.60 * score_modelo) + \
+                            (0.25 * score_popularidade) + \
+                            (0.15 * score_recencia)
+
+                # Data de publicação para exibição
+                data_publicacao = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d')
+
                 recomendacoes.append({
-                    'item_id': item_id,
-                    'score': score
+                    'item_id': self.index_to_item_id[item_idx],
+                    'score': float(score_final),
+                    'score_modelo': float(score_modelo),
+                    'popularidade': float(score_popularidade),
+                    'recencia': float(score_recencia),
+                    'data_publicacao': data_publicacao,
+                    'tipo': 'modelo'
                 })
-            
-            return recomendacoes
-            
+
+            # Ordenar por score final e selecionar top-k
+            recomendacoes.sort(key=lambda x: x['score'], reverse=True)
+            return recomendacoes[:k]
+
         except Exception as e:
             logger.error(f"Erro ao fazer previsões: {str(e)}")
             return []

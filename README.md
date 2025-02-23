@@ -58,6 +58,11 @@ chmod +x scripts/healthcheck.sh
 chmod +x scripts/setup_environment.sh
 ```
 
+### 3. Configure o ambiente:
+```bash
+./scripts/setup_environment.sh
+```
+
 Nota: Para usuários Windows, os scripts .sh não são necessários. Use os comandos Python diretamente ou crie scripts .bat equivalentes.
 
 ## 🚀 Execução Local
@@ -68,7 +73,7 @@ Nota: Para usuários Windows, os scripts .sh não são necessários. Use os coma
 # Para Windows: python -m mlflow server --host 0.0.0.0 --port 5000
 ```
 
-### 2. Execução do pipeline:
+### 2. Inicie o pipeline:
 ```bash
 python pipeline.py
 ```

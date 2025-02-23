@@ -1,4 +1,4 @@
-```markdown
+
 # Sistema de Recomendação de Notícias do Portal G1
 
 Sistema de recomendação híbrido que combina filtragem colaborativa, análise de conteúdo, fatores temporais e de popularidade para gerar recomendações personalizadas de notícias.

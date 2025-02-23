@@ -119,12 +119,12 @@ Utiliza apenas estratégias independentes do histórico do usuário:
 
 ### 3. Pipeline de Processamento
 
-
+```plaintext
 Dados Brutos → Preprocessamento Spark → Features → Modelo → Recomendações → Serving
      ↓               ↓                     ↓          ↓          ↓             ↓
   CSV/JSON    Limpeza & Transformação    TF-IDF    Neural   Aplicaçao de    API REST
                                                             Estrátegias
-
+```
 
 
 ### 4. Componentes do Sistema

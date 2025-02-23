@@ -46,8 +46,7 @@ cd sistema-recomendacao-noticias-g1
 ### 2. Crie e ative um ambiente virtual:
 ```bash
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
+source venv/bin/activate  
 ```
 
 ### 3. Torne os scripts executáveis (Linux/Mac):

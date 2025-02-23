@@ -19,7 +19,7 @@ log "Verificando Java..."
 if ! command -v java &> /dev/null; then
     error_log "Java não encontrado. Instalando..."
     sudo apt-get update
-    sudo apt-get install -y openjdk-8-jdk
+    sudo apt-get install -y openjdk-21-jdk
 fi
 
 

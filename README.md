@@ -69,8 +69,7 @@ Nota: Para usuários Windows, os scripts .sh não são necessários. Use os coma
 
 ### 1. Inicie o servidor MLflow:
 ```bash
-./scripts/start_mlflow.sh  # Linux/Mac
-# Para Windows: python -m mlflow server --host 0.0.0.0 --port 5000
+./scripts/start_mlflow.sh  
 ```
 
 ### 2. Inicie o pipeline:
@@ -80,8 +79,7 @@ python pipeline.py
 
 ### 3. Inicie a API:
 ```bash 
-./scripts/start_api.sh  # Linux/Mac
-# Para Windows: python -m flask run --host=0.0.0.0 --port=8000
+./scripts/start_api.sh  
 ```
 
 ### 4. Acesse a interface web local:
@@ -127,8 +125,8 @@ Utiliza apenas estratégias independentes do histórico do usuário:
 ```plaintext
 Dados Brutos → Preprocessamento Spark → Features → Modelo → Recomendações → Serving
      ↓               ↓                     ↓          ↓          ↓             ↓
-  CSV/JSON    Limpeza & Transformação    TF-IDF    Neural   Aplicaçao de    API REST
-                                                            Estrátegias
+  CSV/JSON    Limpeza & Transformação    TF-IDF    Neural   Aplicação de    API REST
+                                                            Estratégias
 ```
 
 

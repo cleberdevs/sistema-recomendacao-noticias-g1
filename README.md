@@ -37,20 +37,20 @@ Sistema de recomendação híbrido que combina filtragem colaborativa, análise 
 
 Estas instruções permitirão que você execute uma cópia do projeto em sua máquina local para fins de desenvolvimento e teste.
 
-1. Clone o repositório:
+### 1. Clone o repositório:
 ```bash
 git clone https://github.com/cleberdevs/sistema-recomendacao-noticias-g1.git
 cd sistema-recomendacao-noticias-g1
 ```
 
-2. Crie e ative um ambiente virtual:
+### 2. Crie e ative um ambiente virtual:
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
 venv\Scripts\activate     # Windows
 ```
 
-3. Torne os scripts executáveis (Linux/Mac):
+### 3. Torne os scripts executáveis (Linux/Mac):
 ```bash
 chmod +x scripts/start_mlflow.sh
 chmod +x scripts/start_api.sh
@@ -62,24 +62,24 @@ Nota: Para usuários Windows, os scripts .sh não são necessários. Use os coma
 
 ## 🚀 Execução Local
 
-1. Inicie o servidor MLflow:
+### 1. Inicie o servidor MLflow:
 ```bash
 ./scripts/start_mlflow.sh  # Linux/Mac
 # Para Windows: python -m mlflow server --host 0.0.0.0 --port 5000
 ```
 
-2. Execução do pipeline:
+### 2. Execução do pipeline:
 ```bash
-python treinar.py
+python pipeline.py
 ```
 
-3. Inicie a API:
+### 3. Inicie a API:
 ```bash 
 ./scripts/start_api.sh  # Linux/Mac
 # Para Windows: python -m flask run --host=0.0.0.0 --port=8000
 ```
 
-4. Acesse a interface web local:
+### 4. Acesse a interface web local:
 ```
 http://localhost:8000
 ```

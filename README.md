@@ -1,10 +1,6 @@
 ```markdown
 # Sistema de Recomendação de Notícias do Portal G1
 
-![CI](https://github.com/cleberdevs/sistema-recomendacao-noticias-g1/workflows/CI/badge.svg)
-![CD](https://github.com/cleberdevs/sistema-recomendacao-noticias-g1/workflows/CD/badge.svg)
-[![codecov](https://codecov.io/gh/cleberdevs/sistema-recomendacao-noticias-g1/branch/main/graph/badge.svg)](https://codecov.io/gh/cleberdevs/sistema-recomendacao-noticias-g1)
-
 Sistema de recomendação híbrido que combina filtragem colaborativa, análise de conteúdo, fatores temporais e de popularidade para gerar recomendações personalizadas de notícias.
 
 ## 🚀 Funcionalidades

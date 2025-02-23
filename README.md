@@ -32,7 +32,7 @@ Sistema de recomendação híbrido que combina filtragem colaborativa, análise 
 - Virtualenv (recomendado)
 ```
 
-```markdown
+
 ## ⚙️ Instalação Local
 
 Estas instruções permitirão que você execute uma cópia do projeto em sua máquina local para fins de desenvolvimento e teste.
@@ -90,7 +90,7 @@ http://localhost:8000/docs
 ```
 
 
-```markdown
+
 ## 🏗️ Arquitetura
 
 O sistema implementa uma arquitetura híbrida de recomendação que combina múltiplas estratégias em diferentes fases:
@@ -126,7 +126,7 @@ Dados Brutos → Preprocessamento Spark → Features → Modelo → Recomendaç�
                                                             Estrátegias
 ```
 
-```markdown
+
 ### 4. Componentes do Sistema
 
 #### 4.1 Preprocessamento (PySpark)
@@ -190,4 +190,3 @@ Dados Brutos → Preprocessamento Spark → Features → Modelo → Recomendaç�
 - Validação de entrada
 - Sanitização de dados
 - Logs de auditoria
-```

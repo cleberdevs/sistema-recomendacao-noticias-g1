@@ -27,9 +27,9 @@ fi
 PARENT_DIR="$(dirname "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)")"
 
 # Instalar dependências
-log "Instalando dependências..."
-pip install --upgrade pip
-pip install -r ${PARENT_DIR}/requirements.txt
+#log "Instalando dependências..."
+#pip install --upgrade pip
+#pip install -r ${PARENT_DIR}/requirements.txt
 
 
 

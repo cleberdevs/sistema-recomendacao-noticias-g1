@@ -7,6 +7,7 @@ import time
 import mlflow
 import shutil
 import gc
+import glob
 from pathlib import Path
 
 import tensorflow as tf
@@ -19,7 +20,7 @@ from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from src.modelo.preprocessamento_spark import PreProcessadorDadosSpark
 from src.modelo.recomendador import RecomendadorHibrido
-from src.utils.helpers import carregar_arquivos_dados, criar_diretorio_se_nao_existe
+from src.utils.helpers import carregar_arquivos_dados, criar_diretorio_se_nao_existe, carregar_todos_csvs, descompacta_csvs
 from src.config.mlflow_config import MLflowConfig
 from src.config.logging_config import configurar_logging
 from src.config.spark_config import configurar_ambiente_spark, get_spark_config
@@ -27,6 +28,7 @@ from src.config.spark_config import configurar_ambiente_spark, get_spark_config
 # Configurar logging
 configurar_logging()
 logger = logging.getLogger(__name__)
+
 
 def verificar_conexao_spark(spark, max_tentativas=3):
     """
@@ -287,11 +289,55 @@ def treinar_modelo(spark):
                     logger.info("Processando dados brutos...")
                     # Carregar arquivos
                     logger.info("Carregando arquivos de dados")
-                    arquivos_treino = carregar_arquivos_dados('dados/brutos/treino_parte*.csv')
-                    arquivos_itens = carregar_arquivos_dados('dados/brutos/itens/itens-parte*.csv')
-                    
-                    if not arquivos_treino or not arquivos_itens:
-                        raise ValueError("Arquivos de dados não encontrados")
+
+                    # arquivos_treino = carregar_arquivos_dados('dados/brutos/treino_parte[0-9]*.csv')
+                    # arquivos_itens = carregar_arquivos_dados('dados/brutos/itens/itens-parte[0-9]*.csv')
+
+                    # ---------------------------------------------------------------------------------
+
+                    # Substituir as chamadas existentes por:
+                    # Definir caminhos
+                    zip_path = "../challenge-webmedia-e-globo-2023.zip"
+                    diretorio_brutos = "dados/brutos"
+                    diretorio_itens = "dados/brutos/itens"
+
+                    # Garantir que os diretórios existam
+                    os.makedirs(diretorio_brutos, exist_ok=True)
+                    os.makedirs(diretorio_itens, exist_ok=True)
+
+                    # Descompactar os arquivos
+                    arquivos_treino = descompacta_csvs(zip_path, diretorio_brutos, 'treino')
+                    arquivos_itens = descompacta_csvs(zip_path, diretorio_itens, 'itens')
+
+                    # Se não encontrou nada, tentar usar o diretório absoluto
+                    if not arquivos_treino:
+                        diretorio_brutos_abs = "/app/dados/brutos"
+                        os.makedirs(diretorio_brutos_abs, exist_ok=True)
+                        arquivos_treino = descompacta_csvs(zip_path, diretorio_brutos_abs, 'treino')
+
+                    if not arquivos_itens:
+                        diretorio_itens_abs = "/app/dados/brutos/itens"
+                        os.makedirs(diretorio_itens_abs, exist_ok=True)
+                        arquivos_itens = descompacta_csvs(zip_path, diretorio_itens_abs, 'itens')
+
+                    # Verificar resultados
+                    if not arquivos_treino:
+                        logger.error("Nenhum arquivo de treino extraído do ZIP.")
+                        # Tentar carregar de diretórios existentes como fallback
+                        arquivos_treino = carregar_todos_csvs(diretorio_brutos) or carregar_todos_csvs(
+                            "/app/dados/brutos")
+
+                    if not arquivos_itens:
+                        logger.error("Nenhum arquivo de itens extraído do ZIP.")
+                        # Tentar carregar de diretórios existentes como fallback
+                        arquivos_itens = carregar_todos_csvs(diretorio_itens) or carregar_todos_csvs(
+                            "/app/dados/brutos/itens")
+
+                    # Logar resultados finais
+                    logger.info(f"Arquivos de treino finais: {len(arquivos_treino)}")
+                    logger.info(f"Arquivos de itens finais: {len(arquivos_itens)}")
+
+                    # ---------------------------------------------------------------------------------
                     
                     logger.info(f"Arquivos de treino encontrados: {len(arquivos_treino)}")
                     logger.info(f"Arquivos de itens encontrados: {len(arquivos_itens)}")

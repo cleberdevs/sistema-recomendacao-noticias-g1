@@ -23,7 +23,7 @@ var/
 # MLflow
 mlflow-artifacts/
 mlruns/
-mlflow.db
+#mlflow.db
 
 # Logs
 logs/

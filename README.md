@@ -192,3 +192,77 @@ Dados Brutos → Preprocessamento Spark → Features → Modelo → Recomendaç�
 - Validação de entrada
 - Sanitização de dados
 - Logs de auditoria
+
+### 8. Detalhamento da Arquitetura Neural
+
+O sistema implementa uma arquitetura neural profunda que combina filtragem colaborativa e baseada em conteúdo, composta por 11 camadas principais organizadas em 6 grupos funcionais:
+
+#### 8.1 Camadas de Entrada (3 camadas)
+O modelo recebe três tipos de entrada:
+- Entrada de Usuários: 1 neurônio (ID do usuário)
+- Entrada de Itens: 1 neurônio (ID do item)
+- Entrada de Conteúdo: 100 neurônios (vetor TF-IDF dos textos)
+
+#### 8.2 Camadas de Embedding - Filtragem Colaborativa (2 camadas)
+Implementa a filtragem colaborativa através de:
+- Embedding de Usuários: 16 neurônios
+- Embedding de Itens: 16 neurônios
+Características:
+- Transforma IDs em vetores densos
+- Captura padrões latentes de interação
+- Aprende representações automáticas de preferências
+
+#### 8.3 Camadas de Flatten (2 camadas)
+Processamento dos embeddings:
+- Flatten Usuários: 16 neurônios
+- Flatten Itens: 16 neurônios
+
+#### 8.4 Camada de Concatenação (1 camada)
+Fusão das diferentes abordagens:
+- 132 neurônios totais (16 + 16 + 100)
+- Unifica embeddings colaborativos
+- Integra features de conteúdo
+- Permite aprendizado conjunto dos padrões
+
+#### 8.5 Camadas Densas com Regularização (2 blocos)
+Processamento profundo estruturado em:
+
+Primeiro Bloco:
+- Dense: 32 neurônios
+- Layer Normalization: 32 neurônios
+- Dropout: 30% dos neurônios
+
+Segundo Bloco:
+- Dense: 16 neurônios
+- Layer Normalization: 16 neurônios
+- Dropout: 30% dos neurônios
+
+#### 8.6 Camada de Saída (1 camada)
+- 1 neurônio com ativação sigmoid
+- Produz score entre 0 e 1
+- Representa probabilidade de recomendação
+
+#### 8.7 Fluxo de Dados
+1 → 16 → 16 → 132 → 32 → 16 → 1
+(entrada → embedding → flatten → concatenação → dense1 → dense2 → saída)
+
+#### 8.8 Estratégias de Regularização
+- Regularização L2: Controle de complexidade
+- Dropout: Redução de overfitting (30%)
+- Layer Normalization: Estabilidade no treinamento
+- Gradient Clipping: Previne explosão do gradiente
+
+#### 8.9 Vantagens da Arquitetura
+1. **Flexibilidade**
+   - Combina múltiplas fontes de informação
+   - Adaptável a diferentes tipos de conteúdo
+
+2. **Performance**
+   - Embeddings eficientes
+   - Regularização robusta
+   - Treinamento estável
+
+3. **Escalabilidade**
+   - Processamento em batch
+   - Arquitetura modular
+   - Otimização de memória

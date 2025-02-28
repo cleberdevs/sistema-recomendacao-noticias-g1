@@ -66,6 +66,7 @@ chmod +x scripts/setup_environment.sh
 Os dados brutos devem ser colocados nos seguintes diretórios:
 
 
+```
 dados/
 ├── brutos/
 │   ├── treino_parte1.csv
@@ -73,6 +74,7 @@ dados/
 │   └── itens/
 │       ├── itens-parte1.csv
 │       └── itens-parte2.csv
+```
 
 
 

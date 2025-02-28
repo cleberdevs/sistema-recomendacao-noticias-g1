@@ -3,6 +3,15 @@
 
 Sistema de recomendação híbrido que combina filtragem colaborativa, análise de conteúdo, fatores temporais e de popularidade para gerar recomendações personalizadas de notícias.
 
+## Sobre o Projeto
+
+### Autoria
+**Grupo 60 - Pós Tech FIAP - Engenharia de Machine Learning**
+
+### Contexto Acadêmico
+Este projeto foi desenvolvido como parte do curso de Pós-Graduação em Engenharia de Machine Learning da FIAP (Faculdade de Informática e Administração Paulista), representando a aplicação prática dos conhecimentos adquiridos na Fase 5 - MLOPS.
+
+
 ## 🚀 Funcionalidades
 
 - Recomendações personalizadas por usuário

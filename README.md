@@ -57,12 +57,24 @@ chmod +x scripts/healthcheck.sh
 chmod +x scripts/setup_environment.sh
 ```
 
-### 3. Configure o ambiente:
+### 4. Configure o ambiente:
 ```bash
 ./scripts/setup_environment.sh
 ```
+### 5.📁 Localização dos Dados Brutos
 
-Nota: Para usuários Windows, os scripts .sh não são necessários. Use os comandos Python diretamente ou crie scripts .bat equivalentes.
+Os dados brutos devem ser colocados nos seguintes diretórios:
+
+```
+dados/
+├── brutos/
+│   ├── treino_parte1.csv
+│   ├── treino_parte2.csv
+│   └── itens/
+│       ├── itens-parte1.csv
+│       └── itens-parte2.csv
+
+
 
 ## 🚀 Execução Local
 

@@ -12,6 +12,8 @@ RUN apt-get update && \
     wget \
     git \
     net-tools \
+    procps \
+    sqlite3 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -26,6 +28,8 @@ RUN echo "# Modified requirements for Python 3.8 compatibility" > requirements-p
     echo "flask==2.2.5" >> requirements-py38.txt && \
     echo "werkzeug==2.2.3" >> requirements-py38.txt && \
     echo "mlflow==2.8.0" >> requirements-py38.txt && \
+    echo "alembic==1.8.1" >> requirements-py38.txt && \
+    echo "sqlalchemy<2.0.0" >> requirements-py38.txt && \
     echo "pyspark==3.4.1" >> requirements-py38.txt && \
     echo "flask-restx==1.1.0" >> requirements-py38.txt && \
     echo "numpy" >> requirements-py38.txt && \
@@ -47,12 +51,13 @@ RUN python -m nltk.downloader punkt stopwords wordnet
 # Create necessary directories
 RUN mkdir -p dados/brutos/itens
 RUN mkdir -p modelos/modelos_salvos
+RUN mkdir -p mlruns artifacts
 
 # Set environment variables
 ENV PYTHONUNBUFFERED=1 \
     MLFLOW_TRACKING_URI=sqlite:///mlflow.db \
     FLASK_APP=src/api/app.py \
-    FLASK_ENV=production \
+    FLASK_DEBUG=0 \
     JAVA_HOME=/usr/lib/jvm/default-java \
     PYTHONPATH=/app
 
@@ -61,20 +66,44 @@ ENV PYTHONUNBUFFERED=1 \
 # 5000: MLflow server
 EXPOSE 8000 5000
 
-# Create entrypoint script with improved error handling
+# Create a helper script to initialize MLflow db
+RUN echo 'import mlflow\n\
+import os\n\
+import sys\n\
+from mlflow.store.tracking.sqlalchemy_store import SqlAlchemyStore\n\
+\n\
+# Remove existing db file if it exists\n\
+if os.path.exists("mlflow.db"):\n\
+    os.remove("mlflow.db")\n\
+\n\
+# Create a new store and initialize it\n\
+try:\n\
+    store = SqlAlchemyStore("sqlite:///mlflow.db")\n\
+    # Force initialization of tables\n\
+    store.get_experiment_by_name("Default")\n\
+    print("MLflow database initialized successfully")\n\
+except Exception as e:\n\
+    print(f"Error initializing MLflow database: {e}")\n\
+    sys.exit(1)\n\
+' > init_mlflow_db.py
+
+# Create entrypoint script with proper MLflow initialization
 RUN echo '#!/bin/bash\n\
 echo "Verificando dependências..."\n\
-pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk"\n\
+pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk|alembic|sqlalchemy"\n\
 \n\
-# Verificar se o MLflow DB já existe e tem o esquema correto\n\
-if [ ! -f "mlflow.db" ] || [ ! -s "mlflow.db" ]; then\n\
-    echo "Inicializando banco de dados MLflow..."\n\
-    mlflow db upgrade sqlite:///mlflow.db\n\
-fi\n\
+# Initialize MLflow database directly\n\
+echo "Inicializando banco de dados MLflow..."\n\
+python init_mlflow_db.py\n\
 \n\
 # Start MLflow in the background\n\
 echo "Iniciando MLflow..."\n\
-mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./artifacts --host 0.0.0.0 --port 5000 > mlflow.log 2>&1 &\n\
+MLFLOW_TRACKING_URI=sqlite:///mlflow.db \\\n\
+mlflow ui --backend-store-uri sqlite:///mlflow.db \\\n\
+         --default-artifact-root ./artifacts \\\n\
+         --host 0.0.0.0 \\\n\
+         --port 5000 \\\n\
+         > mlflow.log 2>&1 &\n\
 MLFLOW_PID=$!\n\
 \n\
 # Wait for MLflow to start\n\
@@ -88,14 +117,14 @@ while [ $attempt -lt $max_attempts ]; do\n\
     echo "Verificando MLflow (tentativa $attempt/$max_attempts)..."\n\
     \n\
     # Check if MLflow process is still running\n\
-    if ! ps -p $MLFLOW_PID > /dev/null; then\n\
+    if ! kill -0 $MLFLOW_PID 2>/dev/null; then\n\
         echo "ERRO: Processo do MLflow encerrou prematuramente. Verificando logs:"\n\
         cat mlflow.log\n\
         exit 1\n\
     fi\n\
     \n\
     # Try to connect to MLflow API\n\
-    if curl -s http://localhost:5000/api/2.0/mlflow/experiments/list > /dev/null; then\n\
+    if curl -s http://localhost:5000/ > /dev/null; then\n\
         echo "MLflow iniciado com sucesso!"\n\
         mlflow_ready=true\n\
         break\n\

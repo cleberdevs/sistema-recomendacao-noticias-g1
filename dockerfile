@@ -11,7 +11,7 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
-    #openjdk-21-jdk \
+    openjdk-11-jdk \
     curl \
     net-tools \
     netcat \
@@ -22,9 +22,35 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
     && ln -sf /usr/bin/python3 /usr/bin/python \
     && ln -sf /usr/bin/pip3 /usr/bin/pip
 
+# Configurar variáveis de ambiente Java
+ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV PATH=$PATH:$JAVA_HOME/bin
 
+# Atualizar requirements.txt para versões compatíveis
+RUN sed -i 's/flask>=3.1.0/flask>=2.2.0/g' requirements.txt \
+    && sed -i 's/Werkzeug>=3.1.0/Werkzeug>=2.2.0/g' requirements.txt 
 
+# Instalar dependências Python manualmente com versões compatíveis
+RUN python -m pip install --upgrade pip \
+    && python -m pip install \
+    tensorflow==2.5.0 \
+    flask==2.2.3 \
+    pandas==1.3.5 \
+    numpy==1.19.5 \
+    pyspark==3.2.3 \
+    pyarrow==7.0.0 \
+    mlflow==2.3.0 \
+    python-dotenv==0.19.2 \
+    scikit-learn==0.24.2 \
+    nltk==3.8.1 \
+    flask-restx==1.1.0 \
+    Werkzeug==2.2.3 \
+    swagger-ui-bundle==0.0.9
 
+# Baixar dados NLTK
+RUN python -m nltk.downloader stopwords
+
+    
 
 # Criar diretórios necessários
 RUN mkdir -p dados/brutos/itens \
@@ -181,32 +207,35 @@ RUN echo '#!/usr/bin/env python3' > /app/fix_recomendador.py && \
 RUN chmod +x /app/fix_recomendador.py && \
     python /app/fix_recomendador.py || echo "AVISO: Correção será tentada no runtime"
 
+# Script separado para executar apenas o setup_environment.sh
+RUN echo '#!/bin/bash' > /app/run_setup.sh && \
+    echo 'echo "Executando setup do ambiente..."' >> /app/run_setup.sh && \
+    echo 'if [ -f /app/scripts/setup_environment.sh ]; then' >> /app/run_setup.sh && \
+    echo '    chmod +x /app/scripts/setup_environment.sh' >> /app/run_setup.sh && \
+    echo '    /app/scripts/setup_environment.sh' >> /app/run_setup.sh && \
+    echo '    echo "✓ Setup concluído"' >> /app/run_setup.sh && \
+    echo 'else' >> /app/run_setup.sh && \
+    echo '    echo "ERRO: Arquivo setup_environment.sh não encontrado"' >> /app/run_setup.sh && \
+    echo '    exit 1' >> /app/run_setup.sh && \
+    echo 'fi' >> /app/run_setup.sh && \
+    chmod +x /app/run_setup.sh
+
 # Script de inicialização para aplicar a correção em runtime se necessário
 RUN echo '#!/bin/bash' > /app/init.sh && \
     echo 'set -e' >> /app/init.sh && \
     echo '' >> /app/init.sh && \
-    echo '# Executar setup_environment.sh' >> /app/init.sh && \
-    echo 'echo "Configurando ambiente com setup_environment.sh..."' >> /app/init.sh && \
-    echo 'if [ -f /app/scripts/setup_environment.sh ]; then' >> /app/init.sh && \
-    echo '    chmod +x /app/scripts/setup_environment.sh' >> /app/init.sh && \
-    echo '    /app/scripts/setup_environment.sh' >> /app/init.sh && \
-    echo '    if [ $? -ne 0 ]; then' >> /app/init.sh && \
-    echo '        echo "AVISO: setup_environment.sh falhou com código de saída $?"' >> /app/init.sh && \
-    echo '    else' >> /app/init.sh && \
-    echo '        echo "✓ Ambiente configurado com sucesso"' >> /app/init.sh && \
-    echo '    fi' >> /app/init.sh && \
-    echo 'else' >> /app/init.sh && \
-    echo '    echo "ERRO: Arquivo setup_environment.sh não encontrado!"' >> /app/init.sh && \
-    echo 'fi' >> /app/init.sh && \
+    echo '# Executar setup_environment.sh como processo independente' >> /app/init.sh && \
+    echo 'echo ""' >> /app/init.sh && \
+    echo 'echo "============================================================"' >> /app/init.sh && \
+    echo 'echo "CONFIGURANDO AMBIENTE COM SETUP_ENVIRONMENT.SH"' >> /app/init.sh && \
+    echo 'echo "============================================================"' >> /app/init.sh && \
+    echo '/app/run_setup.sh' >> /app/init.sh && \
+    echo 'echo "============================================================"' >> /app/init.sh && \
     echo '' >> /app/init.sh && \
-    echo '# Aplicar correção no início' >> /app/init.sh && \
+    echo '# Seção separada para aplicar a correção' >> /app/init.sh && \
+    echo 'echo ""' >> /app/init.sh && \
     echo 'echo "Verificando e aplicando correção para problema do pickle..."' >> /app/init.sh && \
-    echo 'python /app/fix_recomendador.py' >> /app/init.sh && \
-    echo 'if [ $? -ne 0 ]; then' >> /app/init.sh && \
-    echo '    echo "AVISO: Falha na correção automática. Pipeline pode falhar ao salvar/carregar modelos."' >> /app/init.sh && \
-    echo 'else' >> /app/init.sh && \
-    echo '    echo "✓ Correção aplicada com sucesso"' >> /app/init.sh && \
-    echo 'fi' >> /app/init.sh && \
+    echo 'python /app/fix_recomendador.py || true' >> /app/init.sh && \
     echo '' >> /app/init.sh && \
     echo '# Iniciar o MLflow server' >> /app/init.sh && \
     echo 'echo "Iniciando MLflow server..."' >> /app/init.sh && \
@@ -254,6 +283,10 @@ RUN echo '#!/bin/bash' > /app/run_pipeline.sh && \
     echo '' >> /app/run_pipeline.sh && \
     echo 'cd /app' >> /app/run_pipeline.sh && \
     echo '' >> /app/run_pipeline.sh && \
+    echo '# Garantir que o setup foi executado' >> /app/run_pipeline.sh && \
+    echo 'echo "Verificando se o ambiente está configurado..."' >> /app/run_pipeline.sh && \
+    echo '/app/run_setup.sh || true' >> /app/run_pipeline.sh && \
+    echo '' >> /app/run_pipeline.sh && \
     echo '# Garantir que a correção foi aplicada' >> /app/run_pipeline.sh && \
     echo 'python /app/fix_recomendador.py' >> /app/run_pipeline.sh && \
     echo 'if [ $? -ne 0 ]; then' >> /app/run_pipeline.sh && \
@@ -280,9 +313,6 @@ RUN echo '#!/bin/bash' > /app/run_pipeline.sh && \
     echo 'fi' >> /app/run_pipeline.sh && \
     echo '' >> /app/run_pipeline.sh && \
     echo 'echo "Pipeline executado com sucesso!"' >> /app/run_pipeline.sh
-
-# Baixar dados NLTK
-RUN python -m nltk.downloader stopwords
 
 # Tornar os scripts executáveis
 RUN chmod +x /app/init.sh /app/run_pipeline.sh

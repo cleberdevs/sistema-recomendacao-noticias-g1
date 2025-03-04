@@ -27,7 +27,7 @@ RUN chmod +x scripts/*.sh
 RUN echo "# Modified requirements for Python 3.8 compatibility" > requirements-py38.txt && \
     echo "flask==2.2.5" >> requirements-py38.txt && \
     echo "werkzeug==2.2.3" >> requirements-py38.txt && \
-    echo "mlflow==2.8.0" >> requirements-py38.txt && \
+    echo "mlflow==2.3.0" >> requirements-py38.txt && \
     echo "alembic==1.8.1" >> requirements-py38.txt && \
     echo "sqlalchemy<2.0.0" >> requirements-py38.txt && \
     echo "pyspark==3.4.1" >> requirements-py38.txt && \

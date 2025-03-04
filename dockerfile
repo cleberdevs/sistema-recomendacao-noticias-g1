@@ -34,10 +34,15 @@ RUN echo "# Modified requirements for Python 3.8 compatibility" > requirements-p
     echo "scipy" >> requirements-py38.txt && \
     echo "matplotlib" >> requirements-py38.txt && \
     echo "seaborn" >> requirements-py38.txt && \
-    echo "tensorflow<2.11.0" >> requirements-py38.txt
+    echo "tensorflow<2.11.0" >> requirements-py38.txt && \
+    echo "requests" >> requirements-py38.txt && \
+    echo "nltk" >> requirements-py38.txt
 
 # Install Python dependencies from the modified requirements file
 RUN pip install --no-cache-dir -r requirements-py38.txt
+
+# Download NLTK data
+RUN python -m nltk.downloader punkt stopwords wordnet
 
 # Create necessary directories
 RUN mkdir -p dados/brutos/itens
@@ -56,23 +61,66 @@ ENV PYTHONUNBUFFERED=1 \
 # 5000: MLflow server
 EXPOSE 8000 5000
 
-# Create entrypoint script
+# Create entrypoint script with improved error handling
 RUN echo '#!/bin/bash\n\
 echo "Verificando dependências..."\n\
-pip list | grep -E "mlflow|flask|pyspark|werkzeug"\n\
+pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk"\n\
+\n\
+# Verificar se o MLflow DB já existe e tem o esquema correto\n\
+if [ ! -f "mlflow.db" ] || [ ! -s "mlflow.db" ]; then\n\
+    echo "Inicializando banco de dados MLflow..."\n\
+    mlflow db upgrade sqlite:///mlflow.db\n\
+fi\n\
 \n\
 # Start MLflow in the background\n\
 echo "Iniciando MLflow..."\n\
-./scripts/start_mlflow.sh &\n\
+mlflow server --backend-store-uri sqlite:///mlflow.db --default-artifact-root ./artifacts --host 0.0.0.0 --port 5000 > mlflow.log 2>&1 &\n\
+MLFLOW_PID=$!\n\
 \n\
 # Wait for MLflow to start\n\
 echo "Aguardando MLflow iniciar..."\n\
-sleep 10\n\
+max_attempts=30\n\
+attempt=0\n\
+mlflow_ready=false\n\
+\n\
+while [ $attempt -lt $max_attempts ]; do\n\
+    attempt=$((attempt+1))\n\
+    echo "Verificando MLflow (tentativa $attempt/$max_attempts)..."\n\
+    \n\
+    # Check if MLflow process is still running\n\
+    if ! ps -p $MLFLOW_PID > /dev/null; then\n\
+        echo "ERRO: Processo do MLflow encerrou prematuramente. Verificando logs:"\n\
+        cat mlflow.log\n\
+        exit 1\n\
+    fi\n\
+    \n\
+    # Try to connect to MLflow API\n\
+    if curl -s http://localhost:5000/api/2.0/mlflow/experiments/list > /dev/null; then\n\
+        echo "MLflow iniciado com sucesso!"\n\
+        mlflow_ready=true\n\
+        break\n\
+    fi\n\
+    \n\
+    sleep 2\n\
+done\n\
+\n\
+if [ "$mlflow_ready" = false ]; then\n\
+    echo "ERRO: MLflow não iniciou corretamente após várias tentativas. Verificando logs:"\n\
+    cat mlflow.log\n\
+    exit 1\n\
+fi\n\
 \n\
 # If requested, run the pipeline first\n\
 if [ "$RUN_PIPELINE" = "true" ]; then\n\
     echo "Executando o pipeline..."\n\
     python pipeline.py\n\
+    \n\
+    # Check pipeline exit status\n\
+    PIPELINE_STATUS=$?\n\
+    if [ $PIPELINE_STATUS -ne 0 ]; then\n\
+        echo "ERRO: Pipeline falhou com código de saída $PIPELINE_STATUS"\n\
+        exit $PIPELINE_STATUS\n\
+    fi\n\
     \n\
     # Check if models were created\n\
     if [ ! "$(ls -A modelos/modelos_salvos 2>/dev/null)" ]; then\n\

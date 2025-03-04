@@ -594,7 +594,7 @@ class RecomendadorHibrido:
             X_usuario, X_item, X_conteudo, y = self._preparar_dados_treino_em_lotes(
                 dados_treino_pd, 
                 features_conteudo,
-                max_exemplos_total=200,  # Reduzido
+                max_exemplos_total=100000,  # Reduzido
                 max_exemplos_por_usuario=50,  # Reduzido
                 caminho_checkpoints="dados/checkpoints"
             )
@@ -783,7 +783,7 @@ class RecomendadorHibrido:
             raise e
 
     def _preparar_dados_treino_em_lotes(self, dados_treino_pd, features_conteudo, 
-                                       max_exemplos_total=200,
+                                       max_exemplos_total=100000,
                                        max_exemplos_por_usuario=50,
                                        batch_size=1000,
                                        caminho_checkpoints="dados/checkpoints"):

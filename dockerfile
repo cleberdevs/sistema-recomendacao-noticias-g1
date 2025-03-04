@@ -1,54 +1,52 @@
-# Base image
-FROM python:3.12-slim
+# Base image: Ubuntu Focal (20.04)
+FROM ubuntu:focal
 
-# Set working directory
-WORKDIR /app
+# Avoid prompts during package installation
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install system dependencies
+# Install system dependencies, Python 3.10, and OpenJDK 21
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    default-jre-headless \
+    software-properties-common \
     curl \
     wget \
     git \
     net-tools \
     procps \
     sqlite3 \
+    ca-certificates \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && add-apt-repository ppa:openjdk-r/ppa -y \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+    python3.10 \
+    python3.10-dev \
+    python3.10-venv \
+    python3.10-distutils \
+    openjdk-21-jdk \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy the entire project
+# Install pip for Python 3.10
+RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
+
+# Create symlinks for convenience
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
+    ln -sf /usr/local/bin/pip /usr/bin/pip
+
+# Set working directory
+WORKDIR /app
+
+# Copy the entire project first
 COPY . .
 
 # Make scripts executable
 RUN chmod +x scripts/*.sh
 
-# Create a modified requirements file with Python 3.8 compatible versions
-RUN echo "# Modified requirements for Python 3.8 compatibility" > requirements-py38.txt && \
-    echo "flask==2.2.5" >> requirements-py38.txt && \
-    echo "werkzeug==2.2.3" >> requirements-py38.txt && \
-    echo "mlflow==2.3.0" >> requirements-py38.txt && \
-    echo "alembic==1.8.1" >> requirements-py38.txt && \
-    echo "sqlalchemy<2.0.0" >> requirements-py38.txt && \
-    echo "pyspark==3.4.1" >> requirements-py38.txt && \
-    echo "flask-restx==1.1.0" >> requirements-py38.txt && \
-    echo "numpy" >> requirements-py38.txt && \
-    echo "pandas" >> requirements-py38.txt && \
-    echo "scikit-learn" >> requirements-py38.txt && \
-    echo "scipy" >> requirements-py38.txt && \
-    echo "matplotlib" >> requirements-py38.txt && \
-    echo "seaborn" >> requirements-py38.txt && \
-    echo "tensorflow<2.11.0" >> requirements-py38.txt && \
-    echo "requests" >> requirements-py38.txt && \
-    echo "nltk" >> requirements-py38.txt
+# Run the setup_environment.sh script to set up the environment properly
+RUN ./scripts/setup_environment.sh
 
-# Install Python dependencies from the modified requirements file
-RUN pip install --no-cache-dir -r requirements-py38.txt
-
-# Download NLTK data
-RUN python -m nltk.downloader punkt stopwords wordnet
-
-# Create necessary directories
+# Create necessary directories (if they don't already exist from setup_environment.sh)
 RUN mkdir -p dados/brutos/itens
 RUN mkdir -p modelos/modelos_salvos
 RUN mkdir -p mlruns artifacts
@@ -58,7 +56,7 @@ ENV PYTHONUNBUFFERED=1 \
     MLFLOW_TRACKING_URI=sqlite:///mlflow.db \
     FLASK_APP=src/api/app.py \
     FLASK_DEBUG=0 \
-    JAVA_HOME=/usr/lib/jvm/default-java \
+    JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
     PYTHONPATH=/app
 
 # Expose ports
@@ -87,10 +85,15 @@ except Exception as e:\n\
     sys.exit(1)\n\
 ' > init_mlflow_db.py
 
-# Create entrypoint script with proper MLflow initialization
+# Create entrypoint script
 RUN echo '#!/bin/bash\n\
 echo "Verificando dependências..."\n\
-pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk|alembic|sqlalchemy"\n\
+pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk"\n\
+\n\
+# Verify Java installation\n\
+echo "Verificando instalação do Java:"\n\
+java -version\n\
+echo "JAVA_HOME=$JAVA_HOME"\n\
 \n\
 # Initialize MLflow database directly\n\
 echo "Inicializando banco de dados MLflow..."\n\

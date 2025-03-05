@@ -67,494 +67,349 @@ ENV PYTHONUNBUFFERED=1 \
 # 5000: Servidor MLflow
 EXPOSE 8000 5000
 
-# Cria os scripts Python diretamente usando arquivos externos ou incorporados ao Dockerfile
-# Todos os scripts de suporte são incluídos aqui
-COPY <<-'EOT' /app/init_mlflow_db.py
-import mlflow
-import os
-import sys
-from mlflow.store.tracking.sqlalchemy_store import SqlAlchemyStore
+# Cria todos os arquivos necessários usando 'echo' diretamente para evitar problemas de indentação
+RUN echo 'import mlflow' > /app/init_mlflow_db.py && \
+    echo 'import os' >> /app/init_mlflow_db.py && \
+    echo 'import sys' >> /app/init_mlflow_db.py && \
+    echo 'from mlflow.store.tracking.sqlalchemy_store import SqlAlchemyStore' >> /app/init_mlflow_db.py && \
+    echo '' >> /app/init_mlflow_db.py && \
+    echo '# Remove arquivo de banco de dados existente, se houver' >> /app/init_mlflow_db.py && \
+    echo 'if os.path.exists("mlflow.db"):' >> /app/init_mlflow_db.py && \
+    echo '    os.remove("mlflow.db")' >> /app/init_mlflow_db.py && \
+    echo '' >> /app/init_mlflow_db.py && \
+    echo '# Cria uma nova store e inicializa' >> /app/init_mlflow_db.py && \
+    echo 'try:' >> /app/init_mlflow_db.py && \
+    echo '    store = SqlAlchemyStore("sqlite:///mlflow.db")' >> /app/init_mlflow_db.py && \
+    echo '    # Força a inicialização das tabelas' >> /app/init_mlflow_db.py && \
+    echo '    store.get_experiment_by_name("Default")' >> /app/init_mlflow_db.py && \
+    echo '    print("Banco de dados MLflow inicializado com sucesso")' >> /app/init_mlflow_db.py && \
+    echo 'except Exception as e:' >> /app/init_mlflow_db.py && \
+    echo '    print(f"Erro ao inicializar banco de dados MLflow: {e}")' >> /app/init_mlflow_db.py && \
+    echo '    sys.exit(1)' >> /app/init_mlflow_db.py
 
-# Remove arquivo de banco de dados existente, se houver
-if os.path.exists("mlflow.db"):
-    os.remove("mlflow.db")
+RUN echo 'import os' > /app/test_pyspark.py && \
+    echo 'import sys' >> /app/test_pyspark.py && \
+    echo 'import pyspark' >> /app/test_pyspark.py && \
+    echo '' >> /app/test_pyspark.py && \
+    echo '# Exibe versões do Python e PySpark' >> /app/test_pyspark.py && \
+    echo 'print(f"Versão do Python: {sys.version}")' >> /app/test_pyspark.py && \
+    echo 'print(f"Versão do PySpark: {pyspark.__version__}")' >> /app/test_pyspark.py && \
+    echo '' >> /app/test_pyspark.py && \
+    echo '# Define variáveis de ambiente' >> /app/test_pyspark.py && \
+    echo 'os.environ["PYSPARK_PYTHON"] = sys.executable' >> /app/test_pyspark.py && \
+    echo 'os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable' >> /app/test_pyspark.py && \
+    echo '' >> /app/test_pyspark.py && \
+    echo 'print(f"PYSPARK_PYTHON: {os.environ.get(\"PYSPARK_PYTHON\")}")' >> /app/test_pyspark.py && \
+    echo 'print(f"PYSPARK_DRIVER_PYTHON: {os.environ.get(\"PYSPARK_DRIVER_PYTHON\")}")' >> /app/test_pyspark.py && \
+    echo 'print(f"sys.executable: {sys.executable}")' >> /app/test_pyspark.py && \
+    echo '' >> /app/test_pyspark.py && \
+    echo '# Testa funcionalidade básica do PySpark' >> /app/test_pyspark.py && \
+    echo 'try:' >> /app/test_pyspark.py && \
+    echo '    from pyspark.sql import SparkSession' >> /app/test_pyspark.py && \
+    echo '    spark = SparkSession.builder.appName("PySpark-Test").getOrCreate()' >> /app/test_pyspark.py && \
+    echo '    print("SparkSession criada com sucesso")' >> /app/test_pyspark.py && \
+    echo '    data = [(1, "teste")]' >> /app/test_pyspark.py && \
+    echo '    df = spark.createDataFrame(data, ["id", "valor"])' >> /app/test_pyspark.py && \
+    echo '    df.show()' >> /app/test_pyspark.py && \
+    echo '    spark.stop()' >> /app/test_pyspark.py && \
+    echo '    print("Teste do PySpark concluído com sucesso")' >> /app/test_pyspark.py && \
+    echo 'except Exception as e:' >> /app/test_pyspark.py && \
+    echo '    print(f"Erro ao testar PySpark: {e}")' >> /app/test_pyspark.py && \
+    echo '    sys.exit(1)' >> /app/test_pyspark.py
 
-# Cria uma nova store e inicializa
-try:
-    store = SqlAlchemyStore("sqlite:///mlflow.db")
-    # Força a inicialização das tabelas
-    store.get_experiment_by_name("Default")
-    print("Banco de dados MLflow inicializado com sucesso")
-except Exception as e:
-    print(f"Erro ao inicializar banco de dados MLflow: {e}")
-    sys.exit(1)
-EOT
+RUN echo 'import os' > /app/mlflow_manager.py && \
+    echo 'import sys' >> /app/mlflow_manager.py && \
+    echo 'import time' >> /app/mlflow_manager.py && \
+    echo 'import signal' >> /app/mlflow_manager.py && \
+    echo 'import subprocess' >> /app/mlflow_manager.py && \
+    echo 'import requests' >> /app/mlflow_manager.py && \
+    echo '' >> /app/mlflow_manager.py && \
+    echo 'def start_mlflow_server():' >> /app/mlflow_manager.py && \
+    echo '    """Inicia o servidor MLflow e garante que continue rodando"""' >> /app/mlflow_manager.py && \
+    echo '    cmd = ["mlflow", "ui", "--backend-store-uri", "sqlite:///mlflow.db", "--default-artifact-root", "./artifacts", "--host", "0.0.0.0", "--port", "5000"]' >> /app/mlflow_manager.py && \
+    echo '    log_file = open("mlflow.log", "w")' >> /app/mlflow_manager.py && \
+    echo '    proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)' >> /app/mlflow_manager.py && \
+    echo '    print(f"MLflow iniciado com PID {proc.pid}")' >> /app/mlflow_manager.py && \
+    echo '    max_attempts = 30' >> /app/mlflow_manager.py && \
+    echo '    for attempt in range(max_attempts):' >> /app/mlflow_manager.py && \
+    echo '        try:' >> /app/mlflow_manager.py && \
+    echo '            response = requests.get("http://localhost:5000/")' >> /app/mlflow_manager.py && \
+    echo '            if response.status_code == 200:' >> /app/mlflow_manager.py && \
+    echo '                print(f"Servidor MLflow está rodando (tentativa {attempt+1}/{max_attempts})")' >> /app/mlflow_manager.py && \
+    echo '                return proc' >> /app/mlflow_manager.py && \
+    echo '        except requests.exceptions.ConnectionError:' >> /app/mlflow_manager.py && \
+    echo '            pass' >> /app/mlflow_manager.py && \
+    echo '        if proc.poll() is not None:' >> /app/mlflow_manager.py && \
+    echo '            print(f"Processo MLflow encerrou com código {proc.returncode}")' >> /app/mlflow_manager.py && \
+    echo '            log_file.close()' >> /app/mlflow_manager.py && \
+    echo '            with open("mlflow.log", "r") as f:' >> /app/mlflow_manager.py && \
+    echo '                print(f.read())' >> /app/mlflow_manager.py && \
+    echo '            sys.exit(1)' >> /app/mlflow_manager.py && \
+    echo '        time.sleep(1)' >> /app/mlflow_manager.py && \
+    echo '    print("Servidor MLflow falhou em iniciar no tempo esperado")' >> /app/mlflow_manager.py && \
+    echo '    proc.terminate()' >> /app/mlflow_manager.py && \
+    echo '    log_file.close()' >> /app/mlflow_manager.py && \
+    echo '    sys.exit(1)' >> /app/mlflow_manager.py && \
+    echo '' >> /app/mlflow_manager.py && \
+    echo 'def verify_model_registration():' >> /app/mlflow_manager.py && \
+    echo '    """Verifica se os modelos foram registrados no MLflow"""' >> /app/mlflow_manager.py && \
+    echo '    import mlflow' >> /app/mlflow_manager.py && \
+    echo '    from mlflow.tracking import MlflowClient' >> /app/mlflow_manager.py && \
+    echo '    client = MlflowClient()' >> /app/mlflow_manager.py && \
+    echo '    experiments = client.search_experiments()' >> /app/mlflow_manager.py && \
+    echo '    print(f"Encontrados {len(experiments)} experimentos no MLflow")' >> /app/mlflow_manager.py && \
+    echo '    for exp in experiments:' >> /app/mlflow_manager.py && \
+    echo '        print(f"Experimento: {exp.name} (ID: {exp.experiment_id})")' >> /app/mlflow_manager.py && \
+    echo '        runs = client.search_runs(exp.experiment_id)' >> /app/mlflow_manager.py && \
+    echo '        print(f"  Encontradas {len(runs)} execuções")' >> /app/mlflow_manager.py && \
+    echo '        for run in runs:' >> /app/mlflow_manager.py && \
+    echo '            print(f"  ID da Execução: {run.info.run_id}, Status: {run.info.status}")' >> /app/mlflow_manager.py && \
+    echo '            artifacts = client.list_artifacts(run.info.run_id)' >> /app/mlflow_manager.py && \
+    echo '            print(f"  Artefatos: {len(artifacts)}")' >> /app/mlflow_manager.py && \
+    echo '            for artifact in artifacts:' >> /app/mlflow_manager.py && \
+    echo '                print(f"    {artifact.path}")' >> /app/mlflow_manager.py && \
+    echo '    return True' >> /app/mlflow_manager.py && \
+    echo '' >> /app/mlflow_manager.py && \
+    echo 'if __name__ == "__main__":' >> /app/mlflow_manager.py && \
+    echo '    if len(sys.argv) > 1 and sys.argv[1] == "verify":' >> /app/mlflow_manager.py && \
+    echo '        success = verify_model_registration()' >> /app/mlflow_manager.py && \
+    echo '        sys.exit(0 if success else 1)' >> /app/mlflow_manager.py && \
+    echo '    mlflow_proc = start_mlflow_server()' >> /app/mlflow_manager.py && \
+    echo '    def handle_signal(sig, frame):' >> /app/mlflow_manager.py && \
+    echo '        if sig in (signal.SIGINT, signal.SIGTERM):' >> /app/mlflow_manager.py && \
+    echo '            print("Sinal de terminação recebido, mas mantendo MLflow rodando para o pipeline")' >> /app/mlflow_manager.py && \
+    echo '        else:' >> /app/mlflow_manager.py && \
+    echo '            print(f"Sinal recebido {sig}")' >> /app/mlflow_manager.py && \
+    echo '    signal.signal(signal.SIGINT, handle_signal)' >> /app/mlflow_manager.py && \
+    echo '    signal.signal(signal.SIGTERM, handle_signal)' >> /app/mlflow_manager.py && \
+    echo '    try:' >> /app/mlflow_manager.py && \
+    echo '        while mlflow_proc.poll() is None:' >> /app/mlflow_manager.py && \
+    echo '            time.sleep(1)' >> /app/mlflow_manager.py && \
+    echo '        print(f"MLflow encerrou com código {mlflow_proc.returncode}")' >> /app/mlflow_manager.py && \
+    echo '        with open("mlflow.log", "r") as f:' >> /app/mlflow_manager.py && \
+    echo '            print(f.read())' >> /app/mlflow_manager.py && \
+    echo '    except KeyboardInterrupt:' >> /app/mlflow_manager.py && \
+    echo '        print("Interrompido pelo usuário")' >> /app/mlflow_manager.py && \
+    echo '        mlflow_proc.terminate()' >> /app/mlflow_manager.py
 
-COPY <<-'EOT' /app/mlflow_manager.py
-import os
-import sys
-import time
-import signal
-import subprocess
-import requests
+# Cria o script para fixar o comportamento de mlflow.end_run()
+RUN echo 'import re' > /app/fix_pipeline.py && \
+    echo 'import os' >> /app/fix_pipeline.py && \
+    echo 'def fix_mlflow_pattern():' >> /app/fix_pipeline.py && \
+    echo '    """Corrige manualmente padrões específicos no código."""' >> /app/fix_pipeline.py && \
+    echo '    # Arquivos a serem modificados' >> /app/fix_pipeline.py && \
+    echo '    files = ["pipeline.py", "src/modelo/recomendador.py", "src/config/mlflow_config.py"]' >> /app/fix_pipeline.py && \
+    echo '    for file in files:' >> /app/fix_pipeline.py && \
+    echo '        if not os.path.exists(file):' >> /app/fix_pipeline.py && \
+    echo '            print(f"Arquivo {file} não encontrado")' >> /app/fix_pipeline.py && \
+    echo '            continue' >> /app/fix_pipeline.py && \
+    echo '        # Lê o conteúdo do arquivo' >> /app/fix_pipeline.py && \
+    echo '        with open(file, "r") as f:' >> /app/fix_pipeline.py && \
+    echo '            content = f.read()' >> /app/fix_pipeline.py && \
+    echo '        # Adiciona import do MLflow_TRACKING_URI se necessário' >> /app/fix_pipeline.py && \
+    echo '        if "import mlflow" in content and not "MLFLOW_TRACKING_URI" in content:' >> /app/fix_pipeline.py && \
+    echo '            content = content.replace("import mlflow", "import mlflow\\nimport os\\nos.environ[\'MLFLOW_TRACKING_URI\'] = \'sqlite:///mlflow.db\'")' >> /app/fix_pipeline.py && \
+    echo '        # Procura e corrige mlflow.end_run()' >> /app/fix_pipeline.py && \
+    echo '        if "mlflow.end_run()" in content:' >> /app/fix_pipeline.py && \
+    echo '            lines = content.split("\\n")' >> /app/fix_pipeline.py && \
+    echo '            new_lines = []' >> /app/fix_pipeline.py && \
+    echo '            for i, line in enumerate(lines):' >> /app/fix_pipeline.py && \
+    echo '                if "mlflow.end_run()" in line:' >> /app/fix_pipeline.py && \
+    echo '                    indent = len(line) - len(line.lstrip())' >> /app/fix_pipeline.py && \
+    echo '                    indentation = " " * indent' >> /app/fix_pipeline.py && \
+    echo '                    new_lines.append(f"{indentation}try:")' >> /app/fix_pipeline.py && \
+    echo '                    new_lines.append(f"{indentation}    mlflow.end_run()")' >> /app/fix_pipeline.py && \
+    echo '                    new_lines.append(f"{indentation}except Exception as e:")' >> /app/fix_pipeline.py && \
+    echo '                    new_lines.append(f"{indentation}    print(f\\"Erro ao finalizar MLflow run: {{e}}\\")")' >> /app/fix_pipeline.py && \
+    echo '                else:' >> /app/fix_pipeline.py && \
+    echo '                    new_lines.append(line)' >> /app/fix_pipeline.py && \
+    echo '            content = "\\n".join(new_lines)' >> /app/fix_pipeline.py && \
+    echo '        # Escreve o conteúdo modificado de volta ao arquivo' >> /app/fix_pipeline.py && \
+    echo '        with open(file, "w") as f:' >> /app/fix_pipeline.py && \
+    echo '            f.write(content)' >> /app/fix_pipeline.py && \
+    echo '        print(f"Arquivo {file} corrigido")' >> /app/fix_pipeline.py && \
+    echo '' >> /app/fix_pipeline.py && \
+    echo 'if __name__ == "__main__":' >> /app/fix_pipeline.py && \
+    echo '    fix_mlflow_pattern()' >> /app/fix_pipeline.py && \
+    chmod +x /app/fix_pipeline.py
 
-def start_mlflow_server():
-    """Inicia o servidor MLflow e garante que continue rodando"""
-    # Inicia servidor MLflow
-    cmd = [
-        "mlflow", "ui",
-        "--backend-store-uri", "sqlite:///mlflow.db",
-        "--default-artifact-root", "./artifacts",
-        "--host", "0.0.0.0",
-        "--port", "5000"
-    ]
-    
-    # Abre arquivo de log
-    log_file = open("mlflow.log", "w")
-    
-    # Inicia processo
-    proc = subprocess.Popen(cmd, stdout=log_file, stderr=subprocess.STDOUT)
-    print(f"MLflow iniciado com PID {proc.pid}")
-    
-    # Aguarda servidor estar pronto
-    max_attempts = 30
-    for attempt in range(max_attempts):
-        try:
-            response = requests.get("http://localhost:5000/")
-            if response.status_code == 200:
-                print(f"Servidor MLflow está rodando (tentativa {attempt+1}/{max_attempts})")
-                return proc
-        except requests.exceptions.ConnectionError:
-            pass
-        
-        # Verifica se o processo ainda está rodando
-        if proc.poll() is not None:
-            print(f"Processo MLflow encerrou com código {proc.returncode}")
-            log_file.close()
-            with open("mlflow.log", "r") as f:
-                print(f.read())
-            sys.exit(1)
-        
-        time.sleep(1)
-    
-    print("Servidor MLflow falhou em iniciar no tempo esperado")
-    proc.terminate()
-    log_file.close()
-    sys.exit(1)
+# Aplica as correções ao pipeline
+RUN python /app/fix_pipeline.py 
 
-def verify_model_registration():
-    """Verifica se os modelos foram registrados no MLflow"""
-    import mlflow
-    from mlflow.tracking import MlflowClient
-    
-    client = MlflowClient()
-    experiments = client.search_experiments()
-    
-    print(f"Encontrados {len(experiments)} experimentos no MLflow")
-    for exp in experiments:
-        print(f"Experimento: {exp.name} (ID: {exp.experiment_id})")
-        runs = client.search_runs(exp.experiment_id)
-        print(f"  Encontradas {len(runs)} execuções")
-        
-        for run in runs:
-            print(f"  ID da Execução: {run.info.run_id}, Status: {run.info.status}")
-            artifacts = client.list_artifacts(run.info.run_id)
-            print(f"  Artefatos: {len(artifacts)}")
-            for artifact in artifacts:
-                print(f"    {artifact.path}")
-    
-    return True
-
-if __name__ == "__main__":
-    # Verifica se está sendo chamado para verificar registro de modelo
-    if len(sys.argv) > 1 and sys.argv[1] == "verify":
-        success = verify_model_registration()
-        sys.exit(0 if success else 1)
-    
-    # Inicia servidor MLflow
-    mlflow_proc = start_mlflow_server()
-    
-    # Configura manipuladores de sinal para manter MLflow rodando
-    def handle_signal(sig, frame):
-        if sig in (signal.SIGINT, signal.SIGTERM):
-            print("Sinal de terminação recebido, mas mantendo MLflow rodando para o pipeline")
-        else:
-            print(f"Sinal recebido {sig}")
-    
-    signal.signal(signal.SIGINT, handle_signal)
-    signal.signal(signal.SIGTERM, handle_signal)
-    
-    # Mantém processo rodando até ser explicitamente encerrado
-    try:
-        while mlflow_proc.poll() is None:
-            time.sleep(1)
-        
-        print(f"MLflow encerrou com código {mlflow_proc.returncode}")
-        with open("mlflow.log", "r") as f:
-            print(f.read())
-    except KeyboardInterrupt:
-        print("Interrompido pelo usuário")
-        mlflow_proc.terminate()
-EOT
-
-COPY <<-'EOT' /app/test_pyspark.py
-import os
-import sys
-import pyspark
-
-# Exibe versões do Python e PySpark
-print(f"Versão do Python: {sys.version}")
-print(f"Versão do PySpark: {pyspark.__version__}")
-
-# Define variáveis de ambiente
-os.environ["PYSPARK_PYTHON"] = sys.executable
-os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
-
-print(f"PYSPARK_PYTHON: {os.environ.get('PYSPARK_PYTHON')}")
-print(f"PYSPARK_DRIVER_PYTHON: {os.environ.get('PYSPARK_DRIVER_PYTHON')}")
-print(f"sys.executable: {sys.executable}")
-
-# Testa funcionalidade básica do PySpark
-try:
-    from pyspark.sql import SparkSession
-    spark = SparkSession.builder \
-        .appName("PySpark-Test") \
-        .config("spark.driver.extraJavaOptions", "-Dlog4j.logLevel=ERROR") \
-        .config("spark.executor.extraJavaOptions", "-Dlog4j.logLevel=ERROR") \
-        .config("spark.python.worker.reuse", "true") \
-        .config("spark.pyspark.python", sys.executable) \
-        .config("spark.pyspark.driver.python", sys.executable) \
-        .getOrCreate()
-    
-    print("SparkSession criada com sucesso")
-    
-    # Cria dados de teste simples
-    data = [(1, "teste")]
-    df = spark.createDataFrame(data, ["id", "valor"])
-    df.show()
-    
-    spark.stop()
-    print("Teste do PySpark concluído com sucesso")
-except Exception as e:
-    print(f"Erro ao testar PySpark: {e}")
-    sys.exit(1)
-EOT
-
-# Cria um script melhorado para fazer patch nos arquivos
-COPY <<-'EOT' /app/patch_mlflow.py
-import os
-import re
-import sys
-
-def patch_mlflow_integration():
-    """Aplica patches em arquivos para melhorar a integração com MLflow"""
-    files_to_patch = [
-        "src/config/mlflow_config.py",
-        "src/modelo/recomendador.py",
-        "pipeline.py"
-    ]
-    
-    for file_path in files_to_patch:
-        if not os.path.exists(file_path):
-            print(f"Aviso: {file_path} não encontrado")
-            continue
-        
-        with open(file_path, "r") as f:
-            content = f.read()
-        
-        # Garante que URI de rastreamento MLflow esteja configurada
-        if "import mlflow" in content and "MLFLOW_TRACKING_URI" not in content:
-            content = re.sub(
-                r"import mlflow",
-                "import mlflow\nimport os\nos.environ['MLFLOW_TRACKING_URI'] = 'sqlite:///mlflow.db'",
-                content
-            )
-        
-        # Melhora tratamento de erros MLflow - preservando indentação
-        if "mlflow.end_run()" in content:
-            # Encontra a linha e a indentação atual
-            pattern = r"(\s*)mlflow\.end_run\(\)"
-            matches = re.finditer(pattern, content)
-            
-            for match in matches:
-                indent = match.group(1)  # Captura a indentação atual
-                full_match = match.group(0)  # A linha inteira com indentação
-                replacement = f"{indent}try:\n{indent}    mlflow.end_run()\n{indent}except Exception as e:\n{indent}    print(f\"Erro ao finalizar MLflow run: {{e}}\")"
-                content = content.replace(full_match, replacement)
-        
-        # Adiciona registro explícito de modelo - usando indentação correta
-        if "mlflow.log_artifacts" in content and "mlflow.register_model" not in content:
-            pattern = r"(\s*)mlflow\.log_artifacts\((.*?)\)"
-            matches = re.finditer(pattern, content, re.DOTALL)
-            
-            for match in matches:
-                indent = match.group(1)  # Captura a indentação atual
-                full_match = match.group(0)  # A linha inteira com indentação
-                
-                # Substitui preservando a indentação
-                replacement = f"{full_match}\n{indent}# Registra explicitamente o modelo\n{indent}try:\n{indent}    mlflow.register_model(f\"runs:/{{mlflow.active_run().info.run_id}}/model\", \"sistema_recomendacao\")\n{indent}    print(\"Modelo registrado com sucesso no MLflow\")\n{indent}except Exception as e:\n{indent}    print(f\"Erro ao registrar modelo no MLflow: {{e}}\")"
-                
-                content = content.replace(full_match, replacement)
-        
-        with open(file_path, "w") as f:
-            f.write(content)
-        
-        print(f"Arquivo {file_path} modificado com sucesso")
-
-if __name__ == "__main__":
-    patch_mlflow_integration()
-EOT
-
-# Script para verificar e corrigir manualmente possíveis erros de indentação
-COPY <<-'EOT' /app/fix_indentation.py
-import os
-import sys
-import re
-
-def fix_indentation_in_file(filepath):
-    """Verifica e corrige problemas específicos de indentação"""
-    if not os.path.exists(filepath):
-        print(f"Arquivo {filepath} não encontrado")
-        return False
-    
-    with open(filepath, 'r') as f:
-        content = f.read()
-    
-    # Procura padrões comuns de erro como "try:" sem bloco indentado
-    matches = re.finditer(r'(\s*)try:\s*\n\s*([^\s])', content, re.MULTILINE)
-    
-    # Faz a substituição para cada match
-    new_content = content
-    for match in matches:
-        indent = match.group(1)  # Indentação antes do "try:"
-        next_line = match.group(2)  # Primeiro caractere da próxima linha
-        full_match = match.group(0)  # Texto completo do match
-        
-        # Calcula a indentação correta
-        new_indent = indent + "    "  # 4 espaços de indentação
-        
-        # Substitui no conteúdo
-        replacement = f"{indent}try:\n{new_indent}"
-        fixed = full_match.replace(indent + "try:\n", replacement)
-        new_content = new_content.replace(full_match, fixed)
-    
-    # Se houve alterações, salva o arquivo
-    if new_content != content:
-        with open(filepath, 'w') as f:
-            f.write(new_content)
-        print(f"Arquivo {filepath} corrigido")
-        return True
-    
-    return False
-
-def fix_all_python_files():
-    """Corrige problemas de indentação em todos os arquivos Python do projeto"""
-    fixed_count = 0
-    
-    # Arquivos específicos para verificar primeiro
-    critical_files = ["pipeline.py", "src/modelo/recomendador.py", "src/config/mlflow_config.py"]
-    
-    for filepath in critical_files:
-        if os.path.exists(filepath):
-            if fix_indentation_in_file(filepath):
-                fixed_count += 1
-    
-    # Verifica todos os outros arquivos Python
-    for root, dirs, files in os.walk("."):
-        for file in files:
-            if file.endswith(".py") and file not in [os.path.basename(f) for f in critical_files]:
-                filepath = os.path.join(root, file)
-                if fix_indentation_in_file(filepath):
-                    fixed_count += 1
-    
-    print(f"Total de {fixed_count} arquivos corrigidos")
-
-if __name__ == "__main__":
-    fix_all_python_files()
-EOT
-
-# Aplica os patches do MLflow com o script melhorado
-RUN python patch_mlflow.py 
-
-# Verifica e corrige potenciais problemas de indentação
-RUN python fix_indentation.py
-
-# Cria entrypoint.sh usando um método mais simples
-COPY <<-'EOT' /app/entrypoint.sh
-#!/bin/bash
-echo "Verificando dependências..."
-pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk"
-
-# Verifica instalações do Python e Java
-echo "Caminho do Python: $(which python)"
-echo "Versão do Python: $(python --version)"
-echo "Versão do Java:"
-java -version
-echo "JAVA_HOME=$JAVA_HOME"
-
-# Testa configuração do PySpark
-echo "Testando configuração do PySpark..."
-python test_pyspark.py
-
-# Garante versões corretas do Python para o PySpark
-export PYSPARK_PYTHON=$(which python3.10)
-export PYSPARK_DRIVER_PYTHON=$(which python3.10)
-echo "PYSPARK_PYTHON=$PYSPARK_PYTHON"
-echo "PYSPARK_DRIVER_PYTHON=$PYSPARK_DRIVER_PYTHON"
-
-# Inicializa banco de dados MLflow diretamente
-echo "Inicializando banco de dados MLflow..."
-python init_mlflow_db.py
-
-# Inicia MLflow de forma a garantir que permaneça rodando durante a execução do pipeline
-echo "Iniciando MLflow persistente..."
-python mlflow_manager.py &
-MLFLOW_PID=$!
-
-# Aguarda o MLflow estar pronto
-echo "Aguardando MLflow iniciar..."
-max_attempts=30
-attempt=0
-mlflow_ready=false
-
-while [ $attempt -lt $max_attempts ]; do
-    attempt=$((attempt+1))
-    echo "Verificando MLflow (tentativa $attempt/$max_attempts)..."
-    
-    if curl -s http://localhost:5000/ > /dev/null; then
-        echo "MLflow iniciado com sucesso!"
-        mlflow_ready=true
-        break
-    fi
-    
-    # Verifica se o processo MLflow ainda está rodando
-    if ! kill -0 $MLFLOW_PID 2>/dev/null; then
-        echo "ERRO: Processo do MLflow encerrou prematuramente."
-        cat mlflow.log
-        exit 1
-    fi
-    
-    sleep 2
-done
-
-if [ "$mlflow_ready" = false ]; then
-    echo "ERRO: MLflow não iniciou corretamente após várias tentativas."
-    cat mlflow.log
-    exit 1
-fi
-
-# Se solicitado, executa o pipeline primeiro
-if [ "$RUN_PIPELINE" = "true" ]; then
-    echo "Executando o pipeline..."
-    MLFLOW_TRACKING_URI=sqlite:///mlflow.db \
-    PYSPARK_PYTHON=$PYSPARK_PYTHON \
-    PYSPARK_DRIVER_PYTHON=$PYSPARK_DRIVER_PYTHON \
-    python pipeline.py
-    
-    # Verifica status de saída do pipeline
-    PIPELINE_STATUS=$?
-    if [ $PIPELINE_STATUS -ne 0 ]; then
-        echo "ERRO: Pipeline falhou com código de saída $PIPELINE_STATUS"
-        exit $PIPELINE_STATUS
-    fi
-    
-    # Verifica registro de modelos no MLflow
-    echo "Verificando registro de modelos no MLflow..."
-    python mlflow_manager.py verify
-    
-    # Verifica se os modelos foram criados
-    if [ ! "$(ls -A modelos/modelos_salvos 2>/dev/null)" ]; then
-        echo "AVISO: Nenhum modelo foi encontrado após a execução do pipeline."
-        echo "A API não será iniciada sem modelos treinados."
-        exit 1
-    fi
-else
-    # Verifica se os modelos existem
-    if [ ! "$(ls -A modelos/modelos_salvos 2>/dev/null)" ]; then
-        echo "ERRO: Nenhum modelo encontrado em modelos/modelos_salvos/."
-        echo "Execute o contêiner com -e RUN_PIPELINE=true para treinar os modelos primeiro"
-        echo "ou monte um volume com modelos pré-treinados."
-        exit 1
-    fi
-fi
-
-# Função para lidar com o encerramento do contêiner de forma elegante
-cleanup() {
-    echo "Recebido sinal de encerramento. Encerrando processos..."
-    if [ -n "$API_PID" ]; then
-        echo "Encerrando API (PID: $API_PID)..."
-        kill -TERM $API_PID 2>/dev/null || true
-    fi
-    
-    if [ -n "$MLFLOW_PID" ]; then
-        echo "Encerrando MLflow (PID: $MLFLOW_PID)..."
-        kill -TERM $MLFLOW_PID 2>/dev/null || true
-    fi
-    
-    echo "Processos encerrados, saindo..."
-    exit 0
-}
-
-# Configura trap para cleanup ao parar o contêiner
-trap cleanup SIGTERM SIGINT
-
-# Arquivo para monitoramento de logs da API
-touch api.log
-
-# Inicia o servidor da API em segundo plano
-echo "Iniciando API..."
-./scripts/start_api.sh > api.log 2>&1 &
-API_PID=$!
-
-# Aguarda a API iniciar
-echo "Aguardando API iniciar..."
-sleep 5
-
-# Verifica se a API está rodando
-if ! kill -0 $API_PID 2>/dev/null; then
-    echo "ERRO: API falhou ao iniciar. Verificando logs:"
-    cat api.log
-    exit 1
-fi
-
-echo "==============================================="
-echo "MLflow UI está rodando em: http://localhost:5000"
-echo "API está rodando em: http://localhost:8000"
-echo "==============================================="
-
-# Monitora ambos os processos e mantém o contêiner rodando
-echo "Monitorando processos..."
-while true; do
-    # Verifica se o MLflow ainda está rodando
-    if ! kill -0 $MLFLOW_PID 2>/dev/null; then
-        echo "ALERTA: MLflow encerrou inesperadamente. Tentando reiniciar..."
-        python mlflow_manager.py &
-        MLFLOW_PID=$!
-        echo "MLflow reiniciado com PID: $MLFLOW_PID"
-    fi
-    
-    # Verifica se a API ainda está rodando
-    if ! kill -0 $API_PID 2>/dev/null; then
-        echo "ALERTA: API encerrou inesperadamente. Tentando reiniciar..."
-        ./scripts/start_api.sh > api.log 2>&1 &
-        API_PID=$!
-        echo "API reiniciada com PID: $API_PID"
-    fi
-    
-    # Se ambos os processos falharem, encerra o contêiner
-    if ! kill -0 $MLFLOW_PID 2>/dev/null && ! kill -0 $API_PID 2>/dev/null; then
-        echo "ERRO: Tanto o MLflow quanto a API falharam múltiplas vezes. Encerrando contêiner."
-        echo "Verificando logs do MLflow:"
-        cat mlflow.log
-        echo "Verificando logs da API:"
-        cat api.log
-        exit 1
-    fi
-    
-    # Dorme e verifica novamente
-    sleep 10
-done
-EOT
+# Cria entrypoint.sh usando echo linha por linha
+RUN echo '#!/bin/bash' > /app/entrypoint.sh && \
+    echo 'echo "Verificando dependências..."' >> /app/entrypoint.sh && \
+    echo 'pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk"' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Verifica instalações do Python e Java' >> /app/entrypoint.sh && \
+    echo 'echo "Caminho do Python: $(which python)"' >> /app/entrypoint.sh && \
+    echo 'echo "Versão do Python: $(python --version)"' >> /app/entrypoint.sh && \
+    echo 'echo "Versão do Java:"' >> /app/entrypoint.sh && \
+    echo 'java -version' >> /app/entrypoint.sh && \
+    echo 'echo "JAVA_HOME=$JAVA_HOME"' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Testa configuração do PySpark' >> /app/entrypoint.sh && \
+    echo 'echo "Testando configuração do PySpark..."' >> /app/entrypoint.sh && \
+    echo 'python test_pyspark.py' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Garante versões corretas do Python para o PySpark' >> /app/entrypoint.sh && \
+    echo 'export PYSPARK_PYTHON=$(which python3.10)' >> /app/entrypoint.sh && \
+    echo 'export PYSPARK_DRIVER_PYTHON=$(which python3.10)' >> /app/entrypoint.sh && \
+    echo 'echo "PYSPARK_PYTHON=$PYSPARK_PYTHON"' >> /app/entrypoint.sh && \
+    echo 'echo "PYSPARK_DRIVER_PYTHON=$PYSPARK_DRIVER_PYTHON"' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Inicializa banco de dados MLflow diretamente' >> /app/entrypoint.sh && \
+    echo 'echo "Inicializando banco de dados MLflow..."' >> /app/entrypoint.sh && \
+    echo 'python init_mlflow_db.py' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Inicia MLflow de forma a garantir que permaneça rodando durante a execução do pipeline' >> /app/entrypoint.sh && \
+    echo 'echo "Iniciando MLflow persistente..."' >> /app/entrypoint.sh && \
+    echo 'python mlflow_manager.py &' >> /app/entrypoint.sh && \
+    echo 'MLFLOW_PID=$!' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Aguarda o MLflow estar pronto' >> /app/entrypoint.sh && \
+    echo 'echo "Aguardando MLflow iniciar..."' >> /app/entrypoint.sh && \
+    echo 'max_attempts=30' >> /app/entrypoint.sh && \
+    echo 'attempt=0' >> /app/entrypoint.sh && \
+    echo 'mlflow_ready=false' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo 'while [ $attempt -lt $max_attempts ]; do' >> /app/entrypoint.sh && \
+    echo '    attempt=$((attempt+1))' >> /app/entrypoint.sh && \
+    echo '    echo "Verificando MLflow (tentativa $attempt/$max_attempts)..."' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    if curl -s http://localhost:5000/ > /dev/null; then' >> /app/entrypoint.sh && \
+    echo '        echo "MLflow iniciado com sucesso!"' >> /app/entrypoint.sh && \
+    echo '        mlflow_ready=true' >> /app/entrypoint.sh && \
+    echo '        break' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    # Verifica se o processo MLflow ainda está rodando' >> /app/entrypoint.sh && \
+    echo '    if ! kill -0 $MLFLOW_PID 2>/dev/null; then' >> /app/entrypoint.sh && \
+    echo '        echo "ERRO: Processo do MLflow encerrou prematuramente."' >> /app/entrypoint.sh && \
+    echo '        cat mlflow.log 2>/dev/null || echo "Log do MLflow não encontrado"' >> /app/entrypoint.sh && \
+    echo '        exit 1' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    sleep 2' >> /app/entrypoint.sh && \
+    echo 'done' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo 'if [ "$mlflow_ready" = false ]; then' >> /app/entrypoint.sh && \
+    echo '    echo "ERRO: MLflow não iniciou corretamente após várias tentativas."' >> /app/entrypoint.sh && \
+    echo '    cat mlflow.log 2>/dev/null || echo "Log do MLflow não encontrado"' >> /app/entrypoint.sh && \
+    echo '    exit 1' >> /app/entrypoint.sh && \
+    echo 'fi' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Se solicitado, executa o pipeline primeiro' >> /app/entrypoint.sh && \
+    echo 'if [ "$RUN_PIPELINE" = "true" ]; then' >> /app/entrypoint.sh && \
+    echo '    echo "Executando o pipeline..."' >> /app/entrypoint.sh && \
+    echo '    MLFLOW_TRACKING_URI=sqlite:///mlflow.db \\' >> /app/entrypoint.sh && \
+    echo '    PYSPARK_PYTHON=$PYSPARK_PYTHON \\' >> /app/entrypoint.sh && \
+    echo '    PYSPARK_DRIVER_PYTHON=$PYSPARK_DRIVER_PYTHON \\' >> /app/entrypoint.sh && \
+    echo '    python pipeline.py' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    # Verifica status de saída do pipeline' >> /app/entrypoint.sh && \
+    echo '    PIPELINE_STATUS=$?' >> /app/entrypoint.sh && \
+    echo '    if [ $PIPELINE_STATUS -ne 0 ]; then' >> /app/entrypoint.sh && \
+    echo '        echo "ERRO: Pipeline falhou com código de saída $PIPELINE_STATUS"' >> /app/entrypoint.sh && \
+    echo '        exit $PIPELINE_STATUS' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    # Verifica registro de modelos no MLflow' >> /app/entrypoint.sh && \
+    echo '    echo "Verificando registro de modelos no MLflow..."' >> /app/entrypoint.sh && \
+    echo '    python mlflow_manager.py verify' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    # Verifica se os modelos foram criados' >> /app/entrypoint.sh && \
+    echo '    if [ ! "$(ls -A modelos/modelos_salvos 2>/dev/null)" ]; then' >> /app/entrypoint.sh && \
+    echo '        echo "AVISO: Nenhum modelo foi encontrado após a execução do pipeline."' >> /app/entrypoint.sh && \
+    echo '        echo "A API não será iniciada sem modelos treinados."' >> /app/entrypoint.sh && \
+    echo '        exit 1' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo 'else' >> /app/entrypoint.sh && \
+    echo '    # Verifica se os modelos existem' >> /app/entrypoint.sh && \
+    echo '    if [ ! "$(ls -A modelos/modelos_salvos 2>/dev/null)" ]; then' >> /app/entrypoint.sh && \
+    echo '        echo "ERRO: Nenhum modelo encontrado em modelos/modelos_salvos/."' >> /app/entrypoint.sh && \
+    echo '        echo "Execute o contêiner com -e RUN_PIPELINE=true para treinar os modelos primeiro"' >> /app/entrypoint.sh && \
+    echo '        echo "ou monte um volume com modelos pré-treinados."' >> /app/entrypoint.sh && \
+    echo '        exit 1' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo 'fi' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Função para lidar com o encerramento do contêiner de forma elegante' >> /app/entrypoint.sh && \
+    echo 'cleanup() {' >> /app/entrypoint.sh && \
+    echo '    echo "Recebido sinal de encerramento. Encerrando processos..."' >> /app/entrypoint.sh && \
+    echo '    if [ -n "$API_PID" ]; then' >> /app/entrypoint.sh && \
+    echo '        echo "Encerrando API (PID: $API_PID)..."' >> /app/entrypoint.sh && \
+    echo '        kill -TERM $API_PID 2>/dev/null || true' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    if [ -n "$MLFLOW_PID" ]; then' >> /app/entrypoint.sh && \
+    echo '        echo "Encerrando MLflow (PID: $MLFLOW_PID)..."' >> /app/entrypoint.sh && \
+    echo '        kill -TERM $MLFLOW_PID 2>/dev/null || true' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    echo "Processos encerrados, saindo..."' >> /app/entrypoint.sh && \
+    echo '    exit 0' >> /app/entrypoint.sh && \
+    echo '}' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Configura trap para cleanup ao parar o contêiner' >> /app/entrypoint.sh && \
+    echo 'trap cleanup SIGTERM SIGINT' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Arquivo para monitoramento de logs da API' >> /app/entrypoint.sh && \
+    echo 'touch api.log' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Inicia o servidor da API em segundo plano' >> /app/entrypoint.sh && \
+    echo 'echo "Iniciando API..."' >> /app/entrypoint.sh && \
+    echo './scripts/start_api.sh > api.log 2>&1 &' >> /app/entrypoint.sh && \
+    echo 'API_PID=$!' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Aguarda a API iniciar' >> /app/entrypoint.sh && \
+    echo 'echo "Aguardando API iniciar..."' >> /app/entrypoint.sh && \
+    echo 'sleep 5' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Verifica se a API está rodando' >> /app/entrypoint.sh && \
+    echo 'if ! kill -0 $API_PID 2>/dev/null; then' >> /app/entrypoint.sh && \
+    echo '    echo "ERRO: API falhou ao iniciar. Verificando logs:"' >> /app/entrypoint.sh && \
+    echo '    cat api.log' >> /app/entrypoint.sh && \
+    echo '    exit 1' >> /app/entrypoint.sh && \
+    echo 'fi' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo 'echo "==============================================="' >> /app/entrypoint.sh && \
+    echo 'echo "MLflow UI está rodando em: http://localhost:5000"' >> /app/entrypoint.sh && \
+    echo 'echo "API está rodando em: http://localhost:8000"' >> /app/entrypoint.sh && \
+    echo 'echo "==============================================="' >> /app/entrypoint.sh && \
+    echo '' >> /app/entrypoint.sh && \
+    echo '# Monitora ambos os processos e mantém o contêiner rodando' >> /app/entrypoint.sh && \
+    echo 'echo "Monitorando processos..."' >> /app/entrypoint.sh && \
+    echo 'while true; do' >> /app/entrypoint.sh && \
+    echo '    # Verifica se o MLflow ainda está rodando' >> /app/entrypoint.sh && \
+    echo '    if ! kill -0 $MLFLOW_PID 2>/dev/null; then' >> /app/entrypoint.sh && \
+    echo '        echo "ALERTA: MLflow encerrou inesperadamente. Tentando reiniciar..."' >> /app/entrypoint.sh && \
+    echo '        python mlflow_manager.py &' >> /app/entrypoint.sh && \
+    echo '        MLFLOW_PID=$!' >> /app/entrypoint.sh && \
+    echo '        echo "MLflow reiniciado com PID: $MLFLOW_PID"' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    # Verifica se a API ainda está rodando' >> /app/entrypoint.sh && \
+    echo '    if ! kill -0 $API_PID 2>/dev/null; then' >> /app/entrypoint.sh && \
+    echo '        echo "ALERTA: API encerrou inesperadamente. Tentando reiniciar..."' >> /app/entrypoint.sh && \
+    echo '        ./scripts/start_api.sh > api.log 2>&1 &' >> /app/entrypoint.sh && \
+    echo '        API_PID=$!' >> /app/entrypoint.sh && \
+    echo '        echo "API reiniciada com PID: $API_PID"' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    # Se ambos os processos falharem, encerra o contêiner' >> /app/entrypoint.sh && \
+    echo '    if ! kill -0 $MLFLOW_PID 2>/dev/null && ! kill -0 $API_PID 2>/dev/null; then' >> /app/entrypoint.sh && \
+    echo '        echo "ERRO: Tanto o MLflow quanto a API falharam múltiplas vezes. Encerrando contêiner."' >> /app/entrypoint.sh && \
+    echo '        echo "Verificando logs do MLflow:"' >> /app/entrypoint.sh && \
+    echo '        cat mlflow.log 2>/dev/null || echo "Log do MLflow não encontrado"' >> /app/entrypoint.sh && \
+    echo '        echo "Verificando logs da API:"' >> /app/entrypoint.sh && \
+    echo '        cat api.log' >> /app/entrypoint.sh && \
+    echo '        exit 1' >> /app/entrypoint.sh && \
+    echo '    fi' >> /app/entrypoint.sh && \
+    echo '    ' >> /app/entrypoint.sh && \
+    echo '    # Dorme e verifica novamente' >> /app/entrypoint.sh && \
+    echo '    sleep 10' >> /app/entrypoint.sh && \
+    echo 'done' >> /app/entrypoint.sh
 
 # Torna o entrypoint executável
 RUN chmod +x /app/entrypoint.sh

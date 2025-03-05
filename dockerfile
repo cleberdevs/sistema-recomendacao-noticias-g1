@@ -374,7 +374,7 @@ if __name__ == "__main__":
 EOT
 
 # Aplica os patches do MLflow com o script melhorado
-RUN python patch_mlflow.py || echo "Aviso: Patches podem não ter sido aplicados corretamente"
+RUN python patch_mlflow.py 
 
 # Verifica e corrige potenciais problemas de indentação
 RUN python fix_indentation.py

@@ -147,7 +147,7 @@ docker build -t sistema-recomendacao-g1 .
 
 ## 🚀 Execução Docker
 
-### 1. Execute o comando para criar o conteiner:
+### 1. Execute o comando para criar o container:
 ```bash
 docker run -p 5000:5000 -p 8000:8000 -e RUN_PIPELINE=true -v $(pwd)/dados:/app/dados -v $(pwd)/logs:/app/logs -v $(pwd)/modelos/modelos_salvos:/app/modelos/modelos_salvos --name recomendador sistema-recomendacao-g1 
 ```

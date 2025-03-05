@@ -31,7 +31,8 @@ RUN apt-get update && \
 RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.10
 
 # Create symlinks for convenience
-RUN ln -sf /usr/bin/python3.10 /usr/bin/python && \
+RUN ln -sf /usr/bin/python3.10 /usr/bin/python3 && \
+    ln -sf /usr/bin/python3.10 /usr/bin/python && \
     ln -sf /usr/local/bin/pip /usr/bin/pip
 
 # Set working directory
@@ -57,7 +58,9 @@ ENV PYTHONUNBUFFERED=1 \
     FLASK_APP=src/api/app.py \
     FLASK_DEBUG=0 \
     JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PYSPARK_PYTHON=python3.10 \
+    PYSPARK_DRIVER_PYTHON=python3.10
 
 # Expose ports
 # 8000: Flask API
@@ -85,15 +88,70 @@ except Exception as e:\n\
     sys.exit(1)\n\
 ' > init_mlflow_db.py
 
-# Create entrypoint script
+# Create a pyspark configuration script
+RUN echo 'import os\n\
+import sys\n\
+import pyspark\n\
+\n\
+# Display Python and PySpark versions\n\
+print(f"Python version: {sys.version}")\n\
+print(f"PySpark version: {pyspark.__version__}")\n\
+\n\
+# Set environment variables\n\
+os.environ["PYSPARK_PYTHON"] = sys.executable\n\
+os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable\n\
+\n\
+print(f"PYSPARK_PYTHON: {os.environ.get(\"PYSPARK_PYTHON\")}")\n\
+print(f"PYSPARK_DRIVER_PYTHON: {os.environ.get(\"PYSPARK_DRIVER_PYTHON\")}")\n\
+print(f"sys.executable: {sys.executable}")\n\
+\n\
+# Test basic PySpark functionality\n\
+try:\n\
+    from pyspark.sql import SparkSession\n\
+    spark = SparkSession.builder \\\n\
+        .appName("PySpark-Test") \\\n\
+        .config("spark.driver.extraJavaOptions", "-Dlog4j.logLevel=ERROR") \\\n\
+        .config("spark.executor.extraJavaOptions", "-Dlog4j.logLevel=ERROR") \\\n\
+        .config("spark.python.worker.reuse", "true") \\\n\
+        .config("spark.pyspark.python", sys.executable) \\\n\
+        .config("spark.pyspark.driver.python", sys.executable) \\\n\
+        .getOrCreate()\n\
+    \n\
+    print("Created SparkSession successfully")\n\
+    \n\
+    # Create simple test data\n\
+    data = [(1, "test")]\n\
+    df = spark.createDataFrame(data, ["id", "value"])\n\
+    df.show()\n\
+    \n\
+    spark.stop()\n\
+    print("PySpark test successful")\n\
+except Exception as e:\n\
+    print(f"Error testing PySpark: {e}")\n\
+    sys.exit(1)\n\
+' > test_pyspark.py
+
+# Create entrypoint script with PySpark configuration
 RUN echo '#!/bin/bash\n\
 echo "Verificando dependências..."\n\
 pip list | grep -E "mlflow|flask|pyspark|werkzeug|nltk"\n\
 \n\
-# Verify Java installation\n\
-echo "Verificando instalação do Java:"\n\
+# Verify Python and Java installations\n\
+echo "Python path: $(which python)"\n\
+echo "Python version: $(python --version)"\n\
+echo "Java version:"\n\
 java -version\n\
 echo "JAVA_HOME=$JAVA_HOME"\n\
+\n\
+# Test PySpark configuration\n\
+echo "Testando configuração do PySpark..."\n\
+python test_pyspark.py\n\
+\n\
+# Ensure correct PySpark Python versions\n\
+export PYSPARK_PYTHON=$(which python3.10)\n\
+export PYSPARK_DRIVER_PYTHON=$(which python3.10)\n\
+echo "PYSPARK_PYTHON=$PYSPARK_PYTHON"\n\
+echo "PYSPARK_DRIVER_PYTHON=$PYSPARK_DRIVER_PYTHON"\n\
 \n\
 # Initialize MLflow database directly\n\
 echo "Inicializando banco de dados MLflow..."\n\
@@ -145,7 +203,7 @@ fi\n\
 # If requested, run the pipeline first\n\
 if [ "$RUN_PIPELINE" = "true" ]; then\n\
     echo "Executando o pipeline..."\n\
-    python pipeline.py\n\
+    PYSPARK_PYTHON=$PYSPARK_PYTHON PYSPARK_DRIVER_PYTHON=$PYSPARK_DRIVER_PYTHON python pipeline.py\n\
     \n\
     # Check pipeline exit status\n\
     PIPELINE_STATUS=$?\n\

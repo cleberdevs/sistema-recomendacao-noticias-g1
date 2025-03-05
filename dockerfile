@@ -240,6 +240,7 @@ except Exception as e:
     sys.exit(1)
 EOT
 
+# Cria um script melhorado para fazer patch nos arquivos
 COPY <<-'EOT' /app/patch_mlflow.py
 import os
 import re
@@ -269,21 +270,31 @@ def patch_mlflow_integration():
                 content
             )
         
-        # Melhora tratamento de erros MLflow
-        if "mlflow.end_run" in content:
-            content = re.sub(
-                r"mlflow\.end_run\(.*\)",
-                "try:\n        mlflow.end_run()\n    except Exception as e:\n        print(f\"Erro ao finalizar MLflow run: {e}\")",
-                content
-            )
+        # Melhora tratamento de erros MLflow - preservando indentação
+        if "mlflow.end_run()" in content:
+            # Encontra a linha e a indentação atual
+            pattern = r"(\s*)mlflow\.end_run\(\)"
+            matches = re.finditer(pattern, content)
+            
+            for match in matches:
+                indent = match.group(1)  # Captura a indentação atual
+                full_match = match.group(0)  # A linha inteira com indentação
+                replacement = f"{indent}try:\n{indent}    mlflow.end_run()\n{indent}except Exception as e:\n{indent}    print(f\"Erro ao finalizar MLflow run: {{e}}\")"
+                content = content.replace(full_match, replacement)
         
-        # Adiciona registro explícito de modelo
+        # Adiciona registro explícito de modelo - usando indentação correta
         if "mlflow.log_artifacts" in content and "mlflow.register_model" not in content:
-            content = re.sub(
-                r"mlflow\.log_artifacts\(.*\)",
-                "\\g<0>\n        # Registra explicitamente o modelo\n        try:\n            mlflow.register_model(f\"runs:/{mlflow.active_run().info.run_id}/model\", \"sistema_recomendacao\")\n            print(\"Modelo registrado com sucesso no MLflow\")\n        except Exception as e:\n            print(f\"Erro ao registrar modelo no MLflow: {e}\")",
-                content
-            )
+            pattern = r"(\s*)mlflow\.log_artifacts\((.*?)\)"
+            matches = re.finditer(pattern, content, re.DOTALL)
+            
+            for match in matches:
+                indent = match.group(1)  # Captura a indentação atual
+                full_match = match.group(0)  # A linha inteira com indentação
+                
+                # Substitui preservando a indentação
+                replacement = f"{full_match}\n{indent}# Registra explicitamente o modelo\n{indent}try:\n{indent}    mlflow.register_model(f\"runs:/{{mlflow.active_run().info.run_id}}/model\", \"sistema_recomendacao\")\n{indent}    print(\"Modelo registrado com sucesso no MLflow\")\n{indent}except Exception as e:\n{indent}    print(f\"Erro ao registrar modelo no MLflow: {{e}}\")"
+                
+                content = content.replace(full_match, replacement)
         
         with open(file_path, "w") as f:
             f.write(content)
@@ -294,8 +305,79 @@ if __name__ == "__main__":
     patch_mlflow_integration()
 EOT
 
-# Aplica os patches do MLflow
-RUN python patch_mlflow.py 
+# Script para verificar e corrigir manualmente possíveis erros de indentação
+COPY <<-'EOT' /app/fix_indentation.py
+import os
+import sys
+import re
+
+def fix_indentation_in_file(filepath):
+    """Verifica e corrige problemas específicos de indentação"""
+    if not os.path.exists(filepath):
+        print(f"Arquivo {filepath} não encontrado")
+        return False
+    
+    with open(filepath, 'r') as f:
+        content = f.read()
+    
+    # Procura padrões comuns de erro como "try:" sem bloco indentado
+    matches = re.finditer(r'(\s*)try:\s*\n\s*([^\s])', content, re.MULTILINE)
+    
+    # Faz a substituição para cada match
+    new_content = content
+    for match in matches:
+        indent = match.group(1)  # Indentação antes do "try:"
+        next_line = match.group(2)  # Primeiro caractere da próxima linha
+        full_match = match.group(0)  # Texto completo do match
+        
+        # Calcula a indentação correta
+        new_indent = indent + "    "  # 4 espaços de indentação
+        
+        # Substitui no conteúdo
+        replacement = f"{indent}try:\n{new_indent}"
+        fixed = full_match.replace(indent + "try:\n", replacement)
+        new_content = new_content.replace(full_match, fixed)
+    
+    # Se houve alterações, salva o arquivo
+    if new_content != content:
+        with open(filepath, 'w') as f:
+            f.write(new_content)
+        print(f"Arquivo {filepath} corrigido")
+        return True
+    
+    return False
+
+def fix_all_python_files():
+    """Corrige problemas de indentação em todos os arquivos Python do projeto"""
+    fixed_count = 0
+    
+    # Arquivos específicos para verificar primeiro
+    critical_files = ["pipeline.py", "src/modelo/recomendador.py", "src/config/mlflow_config.py"]
+    
+    for filepath in critical_files:
+        if os.path.exists(filepath):
+            if fix_indentation_in_file(filepath):
+                fixed_count += 1
+    
+    # Verifica todos os outros arquivos Python
+    for root, dirs, files in os.walk("."):
+        for file in files:
+            if file.endswith(".py") and file not in [os.path.basename(f) for f in critical_files]:
+                filepath = os.path.join(root, file)
+                if fix_indentation_in_file(filepath):
+                    fixed_count += 1
+    
+    print(f"Total de {fixed_count} arquivos corrigidos")
+
+if __name__ == "__main__":
+    fix_all_python_files()
+EOT
+
+# Aplica os patches do MLflow com o script melhorado
+RUN python patch_mlflow.py || echo "Aviso: Patches podem não ter sido aplicados corretamente"
+
+# Verifica e corrige potenciais problemas de indentação
+RUN python fix_indentation.py
 
 # Cria entrypoint.sh usando um método mais simples
 COPY <<-'EOT' /app/entrypoint.sh

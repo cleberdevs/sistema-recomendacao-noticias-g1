@@ -74,9 +74,9 @@ COPY docker-scripts/ /tmp/scripts/
 RUN cp /tmp/scripts/init_mlflow_db.py /app/ && \
     cp /tmp/scripts/mlflow_manager.py /app/ && \
     cp /tmp/scripts/test_pyspark.py /app/ && \
-    cp /tmp/scripts/mlflow_wrapper.py /app/ && \
+    #cp /tmp/scripts/mlflow_wrapper.py /app/ && \
     cp /tmp/scripts/entrypoint.sh /app/ && \
-    chmod +x /app/mlflow_wrapper.py /app/entrypoint.sh
+    chmod +x /app/entrypoint.sh
 
 # Define o entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]

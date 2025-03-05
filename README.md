@@ -39,7 +39,7 @@ Este projeto foi desenvolvido como parte do curso de Pós-Graduação em Engenha
 - Java 8+ 
 - Pip
 - Virtualenv (recomendado)
-
+- Docker
 
 
 ## ⚙️ Instalação Local
@@ -104,7 +104,7 @@ python pipeline.py
 ./scripts/start_api.sh  
 ```
 
-### 4. Acesse a interface web local:
+### 4. Acesse a interface web da API:
 ```
 http://localhost:8000
 ```
@@ -114,6 +114,52 @@ A documentação Swagger estará disponível localmente em:
 http://localhost:8000/docs
 ```
 
+## ⚙️ Instalação Docker
+
+Estas instruções permitirão que você execute uma cópia do projeto em sua máquina local ou na nuvem para produção.
+
+### 1. Clone o repositório:
+```bash
+git clone https://github.com/cleberdevs/sistema-recomendacao-noticias-g1.git
+cd sistema-recomendacao-noticias-g1
+```
+### 2. Crie os diretórios necessários:
+```bash
+mkdir -p dados/brutos/itens logs modelos/modelos_salvos
+```
+### 3.📁 Localização dos Dados Brutos
+
+Os dados brutos devem ser colocados nos seguintes diretórios:
+
+```
+dados/
+├── brutos/
+│   ├── treino_parte1.csv
+│   ├── treino_parte2.csv
+│   └── itens/
+│       ├── itens-parte1.csv
+│       └── itens-parte2.csv
+```
+### 4. Crie a imagem:
+```bash
+docker build -t sistema-recomendacao-g1 .
+```
+
+## 🚀 Execução Docker
+
+### 1. Execute o comando para criar o conteiner:
+```bash
+docker run -p 5000:5000 -p 8000:8000 -e RUN_PIPELINE=true -v $(pwd)/dados:/app/dados -v $(pwd)/logs:/app/logs -v $(pwd)/modelos/modelos_salvos:/app/modelos/modelos_salvos --name recomendador sistema-recomendacao-g1 
+```
+### 2. Acesse a interface web da API:
+```
+http://localhost:8000
+```
+
+A documentação Swagger estará disponível localmente em:
+```
+http://localhost:8000/docs
+```
 
 
 ## 🏗️ Arquitetura

@@ -245,7 +245,7 @@ def treinar_modelo(spark):
             # Criar diretórios necessários
             diretorios = [
                 'modelos/modelos_salvos',
-                'dados/processados',
+                'dados_processados',
                 'checkpoints',
                 'logs',
                 'mlflow-artifacts'
@@ -257,16 +257,16 @@ def treinar_modelo(spark):
             preprocessador = PreProcessadorDadosSpark(spark)
             
             # Verificar se existem dados processados
-            dados_processados_exist = os.path.exists("dados/processados/dados_treino_processados.parquet") and \
-                                    os.path.exists("dados/processados/dados_itens_processados.parquet")
+            dados_processados_exist = os.path.exists("dados_processados/dados_treino_processados.parquet") and \
+                                    os.path.exists("dados_processados/dados_itens_processados.parquet")
             
             try:
                 if dados_processados_exist:
                     logger.info("Encontrados dados processados. Tentando carregar...")
                     try:
                         # Carregar dados processados
-                        dados_treino = spark.read.parquet("dados/processados/dados_treino_processados.parquet")
-                        dados_itens = spark.read.parquet("dados/processados/dados_itens_processados.parquet")
+                        dados_treino = spark.read.parquet("dados_processados/dados_treino_processados.parquet")
+                        dados_itens = spark.read.parquet("dados_processados/dados_itens_processados.parquet")
                         
                         # Verificar se os dados são válidos
                         if dados_treino.count() > 0 and dados_itens.count() > 0:

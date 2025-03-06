@@ -41,6 +41,7 @@ ENV/
 
 # Dados
 dados/brutos/
+dados_processados/
 dados/processados/
 
 # Modelos

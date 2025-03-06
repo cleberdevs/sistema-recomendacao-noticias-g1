@@ -110,7 +110,7 @@ try:
         .getOrCreate()
 
     logger.info("Carregando dados dos itens...")
-    caminho_itens = 'dados/processados/dados_itens_processados.parquet'
+    caminho_itens = 'dados_processados/dados_itens_processados.parquet'
     
     dados_itens = spark.read.parquet(caminho_itens) \
         .select('page', 'DataPublicacao')
@@ -135,7 +135,7 @@ try:
             logger.info(f"Processados {offset + len(batch)} de {total_registros} registros")
 
     logger.info("Calculando popularidade dos itens...")
-    caminho_treino = 'dados/processados/dados_treino_processados.parquet'
+    caminho_treino = 'dados_processados/dados_treino_processados.parquet'
     popularidade_items = calcular_popularidade_items(spark, caminho_treino)
 
     logger.info(f"Total de itens com timestamp: {len(timestamps_items)}")

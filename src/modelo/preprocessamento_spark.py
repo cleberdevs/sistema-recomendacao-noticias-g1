@@ -339,7 +339,7 @@ class PreProcessadorDadosSpark:
             # Salvar dados processados
             try:
                 logger.info("\nSalvando dados processados...")
-                caminho_processados = "dados/processados"
+                caminho_processados = "dados_processados"
                 os.makedirs(caminho_processados, exist_ok=True)
 
                 # Salvar dados de treino
@@ -415,7 +415,7 @@ class PreProcessadorDadosSpark:
             tuple: (DataFrame de treino, DataFrame de itens)
         """
         try:
-            caminho_processados = "dados/processados"
+            caminho_processados = "dados_processados"
             
             if not os.path.exists(caminho_processados):
                 raise FileNotFoundError("Diretório de dados processados não encontrado")

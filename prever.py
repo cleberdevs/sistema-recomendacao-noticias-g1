@@ -246,8 +246,8 @@ if __name__ == "__main__":
             .getOrCreate()
             
         # Carregar timestamps e popularidade
-        caminho_itens = 'dados/processados/dados_itens_processados.parquet'
-        caminho_treino = 'dados/processados/dados_treino_processados.parquet'
+        caminho_itens = 'dados_processados/dados_itens_processados.parquet'
+        caminho_treino = 'dados_processados/dados_treino_processados.parquet'
         
         # Carregar alguns dados para teste
         timestamps_teste = {}

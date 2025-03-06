@@ -29,8 +29,8 @@ import mlflow
 from mlflow.store.tracking.sqlalchemy_store import SqlAlchemyStore
 
 # Remove arquivo de banco de dados existente, se houver
-if os.path.exists('mlflow.db'):
-    os.remove('mlflow.db')
+# if os.path.exists('mlflow.db'):
+    # os.remove('mlflow.db')
 
 try:
     # Adiciona o parâmetro default_artifact_root

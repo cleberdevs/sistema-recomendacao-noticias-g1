@@ -163,7 +163,7 @@ http://localhost:8000/docs
 
 ## 🚀 Execução Docker - pipeline executado com dados processados e modelo treinado
 
-##  **Para esta etapa é preciso apenas executar etapa 1 da Instalação Docker**
+###  **Para esta etapa é preciso apenas executar etapa 1 da Instalação Docker**
 
 ### 1. Execute o comando para criar o container:
 ```bash

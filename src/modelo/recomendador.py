@@ -713,7 +713,7 @@ class RecomendadorHibrido:
             for metrica, valores in historia.history.items():
                 logger.info(f"{metrica}: {valores[-1]:.4f}")
             
-            # ===== INÍCIO DA MODIFICAÇÃO =====
+            
             # Salvar o modelo imediatamente após o treinamento, antes das operações MLflow
             try:
                 logger.info("Salvando modelo imediatamente após treinamento")
@@ -723,7 +723,7 @@ class RecomendadorHibrido:
                 logger.info(f"Modelo salvo com sucesso em {caminho_modelo}")
             except Exception as e:
                 logger.error(f"Erro ao salvar modelo diretamente: {e}")
-            # ===== FIM DA MODIFICAÇÃO =====
+            
             
             if mlflow.active_run():
                 try:
@@ -787,7 +787,7 @@ class RecomendadorHibrido:
                         }, f)
                     mlflow.log_artifact("model_artifacts.pkl")
                 except Exception as mlflow_error:
-                    # ===== MODIFICAÇÃO: Capturar erros de MLflow =====
+                    
                     logger.error(f"Erro em operações MLflow: {mlflow_error}")
                     # Não propaga a exceção de MLflow
             

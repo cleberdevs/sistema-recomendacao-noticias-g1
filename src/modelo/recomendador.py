@@ -713,66 +713,83 @@ class RecomendadorHibrido:
             for metrica, valores in historia.history.items():
                 logger.info(f"{metrica}: {valores[-1]:.4f}")
             
+            # ===== INÍCIO DA MODIFICAÇÃO =====
+            # Salvar o modelo imediatamente após o treinamento, antes das operações MLflow
+            try:
+                logger.info("Salvando modelo imediatamente após treinamento")
+                caminho_modelo = "modelos/modelos_salvos/modelo_recomendacao.h5"
+                os.makedirs(os.path.dirname(caminho_modelo), exist_ok=True)
+                self.modelo.save(caminho_modelo)
+                logger.info(f"Modelo salvo com sucesso em {caminho_modelo}")
+            except Exception as e:
+                logger.error(f"Erro ao salvar modelo diretamente: {e}")
+            # ===== FIM DA MODIFICAÇÃO =====
+            
             if mlflow.active_run():
-                # Registrar fim do treinamento
-                mlflow.log_param("fim_treinamento", datetime.now().isoformat())
-                
-                # Métricas finais
-                metricas = {
-                    "loss_final": historia.history['loss'][-1],
-                    "val_loss_final": historia.history['val_loss'][-1],
-                    "accuracy_final": historia.history['accuracy'][-1],
-                    "val_accuracy_final": historia.history['val_accuracy'][-1],
-                    "precision_final": historia.history['precision'][-1],
-                    "val_precision_final": historia.history['val_precision'][-1],
-                    "recall_final": historia.history['recall'][-1],
-                    "val_recall_final": historia.history['val_recall'][-1],
-                    "n_exemplos_treino": len(y),
-                    "n_exemplos_positivos": int(tf.reduce_sum(tf.cast(y == 1, tf.int32))),
-                    "n_exemplos_negativos": int(tf.reduce_sum(tf.cast(y == 0, tf.int32))),
-                    "n_usuarios": len(self.usuario_id_to_index),
-                    "n_itens": self.item_count,
-                    "max_usuario_idx": int(max_usuario_idx),
-                    "max_item_idx": int(max_item_idx)
-                }
-                self.mlflow_config.log_metricas(metricas)
-                
-                # Registrar modelo com mais informações
                 try:
-                    mlflow.tensorflow.log_model(
-                        self.modelo,
-                        "tensorflow-model",
-                        registered_model_name="recomendador_hibrido",
-                        input_example=[
-                            np.array([[0]], dtype=np.int32),
-                            np.array([[0]], dtype=np.int32),
-                            np.zeros((1, self.dim_features_texto), dtype=np.float32)
-                        ],
-                        metadata={
-                            "timestamp": datetime.now().isoformat(),
-                            "framework": "tensorflow",
-                            "python_version": sys.version,
-                            "dim_embedding": self.dim_embedding,
-                            "dim_features_texto": self.dim_features_texto
-                        }
-                    )
-                    logger.info("Modelo registrado no MLflow com sucesso")
-                except Exception as e:
-                    logger.error(f"Erro ao registrar modelo no MLflow: {str(e)}")
-                
-                # Salvar artefatos adicionais
-                with open("model_artifacts.pkl", "wb") as f:
-                    pickle.dump({
-                        'tfidf': self.tfidf,
-                        'item_id_to_index': self.item_id_to_index,
-                        'index_to_item_id': self.index_to_item_id,
-                        'usuario_id_to_index': self.usuario_id_to_index,
-                        'index_to_usuario_id': self.index_to_usuario_id,
-                        'item_count': self.item_count,
-                        'dim_embedding': self.dim_embedding,
-                        'dim_features_texto': self.dim_features_texto
-                    }, f)
-                mlflow.log_artifact("model_artifacts.pkl")
+                    # Registrar fim do treinamento
+                    mlflow.log_param("fim_treinamento", datetime.now().isoformat())
+                    
+                    # Métricas finais
+                    metricas = {
+                        "loss_final": historia.history['loss'][-1],
+                        "val_loss_final": historia.history['val_loss'][-1],
+                        "accuracy_final": historia.history['accuracy'][-1],
+                        "val_accuracy_final": historia.history['val_accuracy'][-1],
+                        "precision_final": historia.history['precision'][-1],
+                        "val_precision_final": historia.history['val_precision'][-1],
+                        "recall_final": historia.history['recall'][-1],
+                        "val_recall_final": historia.history['val_recall'][-1],
+                        "n_exemplos_treino": len(y),
+                        "n_exemplos_positivos": int(tf.reduce_sum(tf.cast(y == 1, tf.int32))),
+                        "n_exemplos_negativos": int(tf.reduce_sum(tf.cast(y == 0, tf.int32))),
+                        "n_usuarios": len(self.usuario_id_to_index),
+                        "n_itens": self.item_count,
+                        "max_usuario_idx": int(max_usuario_idx),
+                        "max_item_idx": int(max_item_idx)
+                    }
+                    self.mlflow_config.log_metricas(metricas)
+                    
+                    # Registrar modelo com mais informações
+                    try:
+                        mlflow.tensorflow.log_model(
+                            self.modelo,
+                            "tensorflow-model",
+                            registered_model_name="recomendador_hibrido",
+                            input_example=[
+                                np.array([[0]], dtype=np.int32),
+                                np.array([[0]], dtype=np.int32),
+                                np.zeros((1, self.dim_features_texto), dtype=np.float32)
+                            ],
+                            metadata={
+                                "timestamp": datetime.now().isoformat(),
+                                "framework": "tensorflow",
+                                "python_version": sys.version,
+                                "dim_embedding": self.dim_embedding,
+                                "dim_features_texto": self.dim_features_texto
+                            }
+                        )
+                        logger.info("Modelo registrado no MLflow com sucesso")
+                    except Exception as e:
+                        logger.error(f"Erro ao registrar modelo no MLflow: {str(e)}")
+                    
+                    # Salvar artefatos adicionais
+                    with open("model_artifacts.pkl", "wb") as f:
+                        pickle.dump({
+                            'tfidf': self.tfidf,
+                            'item_id_to_index': self.item_id_to_index,
+                            'index_to_item_id': self.index_to_item_id,
+                            'usuario_id_to_index': self.usuario_id_to_index,
+                            'index_to_usuario_id': self.index_to_usuario_id,
+                            'item_count': self.item_count,
+                            'dim_embedding': self.dim_embedding,
+                            'dim_features_texto': self.dim_features_texto
+                        }, f)
+                    mlflow.log_artifact("model_artifacts.pkl")
+                except Exception as mlflow_error:
+                    # ===== MODIFICAÇÃO: Capturar erros de MLflow =====
+                    logger.error(f"Erro em operações MLflow: {mlflow_error}")
+                    # Não propaga a exceção de MLflow
             
             return historia
             

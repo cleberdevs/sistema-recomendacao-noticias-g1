@@ -145,12 +145,31 @@ dados/
 docker build -t sistema-recomendacao-g1 .
 ```
 
-## 🚀 Execução Docker
+## 🚀 Execução Docker - pipeline não executado
 
 ### 1. Execute o comando para criar o container:
 ```bash
 docker run -p 5000:5000 -p 8000:8000 -e RUN_PIPELINE=true -v $(pwd)/dados:/app/dados -v $(pwd)/logs:/app/logs -v $(pwd)/modelos/modelos_salvos:/app/modelos/modelos_salvos --name recomendador sistema-recomendacao-g1 
 ```
+### 2. Acesse a interface web da API:
+```
+http://localhost:8000
+```
+
+A documentação Swagger estará disponível localmente em:
+```
+http://localhost:8000/docs
+```
+
+## 🚀 Execução Docker - pipeline executado com dados processados e modelo treinado
+
+###  **Para esta etapa não é preciso executar nenhuma etapa da Instalação Docker**
+
+### 1. Execute o comando para criar o container:
+```bash
+docker run -p 5000:5000 -p 8000:8000 -e RUN_PIPELINE=false --name recomendador cleberfx/sistema-recomendacao-g1:dados-processados-modelo-treinado 
+```
+
 ### 2. Acesse a interface web da API:
 ```
 http://localhost:8000
